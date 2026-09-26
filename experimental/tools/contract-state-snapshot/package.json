@@ -1,0 +1,29 @@
+{
+  "name": "@stellarcade/contract-state-snapshot",
+  "version": "0.0.1",
+  "description": "Soroban contract instance and persistent storage snapshot/diff CLI",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "contract-state-snapshot": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "test": "vitest run"
+  },
+  "keywords": ["soroban", "stellar", "storage", "snapshot", "scval", "xdr", "cli"],
+  "author": "StellarCade",
+  "license": "MIT",
+  "dependencies": {
+    "@stellar/stellar-sdk": "^14.5.0",
+    "commander": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3",
+    "vitest": "^1.0.0"
+  }
+}
