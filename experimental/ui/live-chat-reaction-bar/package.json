@@ -1,0 +1,10 @@
+{
+  "name": "@stellarcade/live-chat-reaction-bar",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./LiveChatReactionBar.tsx",
+  "types": "./types.ts",
+  "scripts": {
+    "test": "vitest run"
+  }
+}
