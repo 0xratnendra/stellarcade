@@ -1,0 +1,28 @@
+{
+  "name": "@stellarcade/transaction-cost-estimator",
+  "version": "0.0.1",
+  "description": "Soroban transaction resource fee and storage footprint cost estimator (formula-based, see README for accuracy notes)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "transaction-cost-estimator": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "test": "vitest run"
+  },
+  "keywords": ["soroban", "stellar", "fee", "cost", "estimator", "resource", "rent"],
+  "author": "StellarCade",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3",
+    "vitest": "^1.0.0"
+  }
+}
