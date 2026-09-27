@@ -1,0 +1,28 @@
+{
+  "name": "@stellarcade/keypair-hygiene-linter",
+  "version": "0.0.1",
+  "description": "Source code secret and hardcoded Stellar secret keypair scanner CLI",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "keypair-hygiene-linter": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "test": "vitest run"
+  },
+  "keywords": ["stellar", "keypair", "secret", "scanner", "linter", "security"],
+  "author": "StellarCade",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3",
+    "vitest": "^1.0.0"
+  }
+}

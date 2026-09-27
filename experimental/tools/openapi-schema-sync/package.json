@@ -1,0 +1,30 @@
+{
+  "name": "@stellarcade/openapi-schema-sync",
+  "version": "0.0.1",
+  "description": "Backend route to OpenAPI 3.1 spec bi-directional sync checker and linter",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "openapi-schema-sync": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "test": "vitest run"
+  },
+  "keywords": ["openapi", "express", "schema", "sync", "linter"],
+  "author": "StellarCade",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^11.1.0",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.10.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3",
+    "vitest": "^1.0.0"
+  }
+}
