@@ -1,0 +1,10 @@
+{
+  "name": "@stellarcade/payout-calculator-slider",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./PayoutCalculatorSlider.tsx",
+  "types": "./types.ts",
+  "scripts": {
+    "test": "vitest run"
+  }
+}

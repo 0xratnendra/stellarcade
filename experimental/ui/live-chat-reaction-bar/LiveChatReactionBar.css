@@ -1,0 +1,75 @@
+.reaction-bar-container {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(20, 24, 40, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+  position: relative;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.reaction-bar-button {
+  background: transparent;
+  border: none;
+  font-size: 1.25rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
+  position: relative;
+}
+
+.reaction-bar-button:hover:not(:disabled) {
+  transform: scale(1.2);
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.reaction-bar-button:focus-visible {
+  outline: 2px solid #8b5cf6;
+  outline-offset: 2px;
+}
+
+.reaction-bar-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.reaction-burst-container {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  width: 100%;
+  height: 120px;
+  overflow: visible;
+}
+
+.reaction-burst-emoji {
+  position: absolute;
+  bottom: 0;
+  font-size: 1.5rem;
+  animation: floatUpBurst 0.8s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+@keyframes floatUpBurst {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-80px) scale(1.4);
+  }
+}
+
+.spectator-badge {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  padding: 0.25rem 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}

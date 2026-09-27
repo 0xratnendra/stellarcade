@@ -1,0 +1,10 @@
+{
+  "name": "@stellarcade/player-avatar-badge-builder",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./PlayerAvatarBadgeBuilder.tsx",
+  "types": "./types.ts",
+  "scripts": {
+    "test": "vitest run"
+  }
+}

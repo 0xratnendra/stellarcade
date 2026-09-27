@@ -1,0 +1,10 @@
+{
+  "name": "@stellarcade/provable-seed-history-drawer",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./ProvableSeedHistoryDrawer.tsx",
+  "types": "./types.ts",
+  "scripts": {
+    "test": "vitest run"
+  }
+}
