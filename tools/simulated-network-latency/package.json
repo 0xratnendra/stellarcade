@@ -1,0 +1,30 @@
+{
+  "name": "@stellarcade/simulated-network-latency",
+  "version": "0.0.1",
+  "description": "Mock Stellar RPC proxy that injects configurable network latency and fault conditions for local testing",
+  "main": "dist/index.js",
+  "bin": {
+    "simulated-network-latency": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "test": "vitest"
+  },
+  "keywords": ["soroban", "stellar", "rpc", "latency", "fault-injection", "testing"],
+  "author": "StellarCade",
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "commander": "^11.1.0",
+    "node-fetch": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/node-fetch": "^2.6.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3",
+    "vitest": "^1.0.0"
+  }
+}
