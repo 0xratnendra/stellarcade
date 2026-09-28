@@ -1,0 +1,84 @@
+.currency-conversion-tag {
+  position: relative;
+  display: inline-block;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.currency-conversion-tag__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: #1b1e2b;
+  color: #f9fafb;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.currency-conversion-tag__badge:hover {
+  border-color: #38bdf8;
+}
+
+.currency-conversion-tag__fiat {
+  color: #9ca3af;
+}
+
+.currency-conversion-tag__freshness-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.currency-conversion-tag__freshness-dot--fresh {
+  background: #4ade80;
+}
+
+.currency-conversion-tag__freshness-dot--stale {
+  background: #facc15;
+}
+
+.currency-conversion-tag__freshness-dot--very-stale {
+  background: #f87171;
+}
+
+.currency-conversion-tag__freshness-dot--unknown {
+  background: #6b7280;
+}
+
+.currency-conversion-tag__tooltip {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 100px;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #12141d;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.currency-conversion-tag__tooltip-item {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #f9fafb;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.currency-conversion-tag__tooltip-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.currency-conversion-tag__tooltip-item--active {
+  color: #38bdf8;
+  font-weight: 600;
+}
