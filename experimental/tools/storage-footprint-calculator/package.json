@@ -1,0 +1,25 @@
+{
+  "name": "@stellarcade/storage-footprint-calculator",
+  "version": "0.0.1",
+  "description": "Soroban storage footprint, rent, and TTL cost estimator",
+  "main": "dist/cli.js",
+  "types": "dist/cli.d.ts",
+  "bin": {
+    "storage-footprint-calculator": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "dev": "ts-node cli.ts",
+    "test": "vitest run"
+  },
+  "keywords": ["soroban", "storage", "rent", "ttl", "stellar"],
+  "author": "StellarCade",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3",
+    "vitest": "^1.0.0"
+  }
+}

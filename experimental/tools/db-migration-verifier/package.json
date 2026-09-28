@@ -1,0 +1,25 @@
+{
+  "name": "@stellarcade/db-migration-verifier",
+  "version": "0.0.1",
+  "description": "Schema and migration verification for Prisma-backed databases",
+  "main": "dist/cli.js",
+  "types": "dist/cli.d.ts",
+  "bin": {
+    "db-migration-verifier": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "dev": "ts-node cli.ts",
+    "test": "vitest run"
+  },
+  "keywords": ["prisma", "schema", "migration", "verifier", "cli"],
+  "author": "StellarCade",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3",
+    "vitest": "^1.0.0"
+  }
+}

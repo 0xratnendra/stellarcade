@@ -1,0 +1,25 @@
+{
+  "name": "@stellarcade/asset-bundle-analyzer",
+  "version": "0.0.1",
+  "description": "Standalone asset auditor for images and audio bundles",
+  "main": "dist/cli.js",
+  "types": "dist/cli.d.ts",
+  "bin": {
+    "asset-bundle-analyzer": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "dev": "ts-node cli.ts",
+    "test": "vitest run"
+  },
+  "keywords": ["asset", "images", "audio", "bundle", "cli"],
+  "author": "StellarCade",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3",
+    "vitest": "^1.0.0"
+  }
+}
