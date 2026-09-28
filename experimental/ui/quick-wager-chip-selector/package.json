@@ -1,0 +1,20 @@
+{
+  "name": "@stellarcade/quick-wager-chip-selector",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./QuickWagerChipSelector.tsx",
+  "types": "./types.ts",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.1.5",
+    "@testing-library/react": "^14.1.2",
+    "@types/react": "^18.2.45",
+    "jsdom": "^23.0.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.0.0"
+  }
+}
