@@ -1,0 +1,32 @@
+{
+  "name": "@stellarcade/theme-switcher",
+  "version": "1.0.0",
+  "description": "Arcade-themed cyberpunk color palette switcher component",
+  "main": "index.ts",
+  "types": "index.ts",
+  "scripts": {
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "keywords": [
+    "arcade",
+    "theme",
+    "switcher",
+    "cyberpunk",
+    "dark-light",
+    "react"
+  ],
+  "author": "Stellarcade Contributors",
+  "license": "MIT",
+  "peerDependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^14.0.0",
+    "@testing-library/jest-dom": "^6.0.0",
+    "@types/react": "^18.0.0",
+    "vitest": "^1.0.0",
+    "jsdom": "^23.0.0"
+  }
+}
