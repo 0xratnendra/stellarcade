@@ -1,0 +1,174 @@
+.fairness-hash-comparator {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 24px;
+  border-radius: 16px;
+  background: #12141d;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f9fafb;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  max-width: 560px;
+}
+
+.fairness-hash-comparator__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.fairness-hash-comparator__subtitle {
+  margin: -8px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #9ca3af;
+}
+
+.fairness-hash-comparator__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.fairness-hash-comparator__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fairness-hash-comparator__label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #c7cedd;
+}
+
+.fairness-hash-comparator__input {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: #1b1e2b;
+  color: #f9fafb;
+  font-size: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.fairness-hash-comparator__input::placeholder {
+  color: #6b7280;
+}
+
+.fairness-hash-comparator__input:focus {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+}
+
+.fairness-hash-comparator__checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #9ca3af;
+  cursor: pointer;
+}
+
+.fairness-hash-comparator__results {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 12px;
+  background: #1b1e2b;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.fairness-hash-comparator__result-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fairness-hash-comparator__result-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #9ca3af;
+}
+
+.fairness-hash-comparator__hash {
+  font-size: 12px;
+  word-break: break-all;
+  color: #e5e7eb;
+}
+
+.fairness-hash-comparator__status-pill {
+  align-self: flex-start;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.fairness-hash-comparator__status-pill--verified {
+  background: rgba(34, 197, 94, 0.16);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.4);
+}
+
+.fairness-hash-comparator__status-pill--mismatch {
+  background: rgba(239, 68, 68, 0.16);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.fairness-hash-comparator__status-pill--pending {
+  background: rgba(156, 163, 175, 0.14);
+  color: #9ca3af;
+  border: 1px solid rgba(156, 163, 175, 0.3);
+}
+
+.fairness-hash-comparator__outcomes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.fairness-hash-comparator__outcome {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #12141d;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: center;
+}
+
+.fairness-hash-comparator__outcome-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #9ca3af;
+}
+
+.fairness-hash-comparator__copy-btn {
+  align-self: flex-start;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.fairness-hash-comparator__copy-btn:hover {
+  background: rgba(56, 189, 248, 0.2);
+}
