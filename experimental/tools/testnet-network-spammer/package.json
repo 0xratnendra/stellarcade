@@ -1,0 +1,23 @@
+{
+  "name": "testnet-network-spammer",
+  "version": "1.0.0",
+  "description": "Load generator CLI for simulating concurrent match wagering transactions",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "dev": "ts-node cli.ts"
+  },
+  "dependencies": {
+    "@stellar/js-stellar-sdk": "^11.0.0",
+    "yargs": "^17.0.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.0.0",
+    "@types/node": "^18.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "ts-node": "^10.0.0",
+    "typescript": "^5.0.0"
+  }
+}
