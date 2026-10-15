@@ -38,6 +38,10 @@ if echo "$STAGED" | grep -q "^backend/"; then
 fi
 
 # ── 3. Re-stage only originally staged files that were auto-formatted ─────────
-echo "$STAGED" | while IFS= read -r f; do [ -n "$f" ] && [ -e "$f" ] && git add "$f"; done
+echo "$STAGED" | while IFS= read -r f; do
+    if [ -n "$f" ] && [ -e "$f" ]; then
+        git add "$f"
+    fi
+done
 
 echo "✅ Pre-commit checks passed!"
