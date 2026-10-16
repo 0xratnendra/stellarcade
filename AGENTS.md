@@ -18,10 +18,12 @@ Most rejected PRs here were not wrong because the code was bad — they were
 wrong because they did something other than what the issue asked, or made
 something *look* finished that wasn't. These rules are not optional.
 
-1. **One linked issue per PR.** Work from a single GitHub issue and put
-   `Closes #<number>` in the PR description. No issue, no PR. Don't bundle
-   "while I was here" fixes — open a separate issue for them.
-2. **Stay inside the issue's targets.** Issues list their files under
+1. **Link every issue the PR closes.** Put one `Closes #<number>` line per
+   issue in the PR description. No issue, no PR. Related issues can share a
+   PR (e.g. a contract change and the deploy that depends on it), but each
+   linked issue's Required Tests and Definition of Done still apply in full.
+   Don't bundle unrelated "while I was here" fixes — open a separate issue.
+2. **Stay inside the linked issues' targets.** Issues list their files under
    **Where to Implement (Exact Targets)**. Edit only those files, plus the
    test files the issue's **Required Tests** section names. If the work
    genuinely needs another file, stop and say so in the PR (or ask on the
@@ -60,6 +62,15 @@ something *look* finished that wasn't. These rules are not optional.
 6. **Don't hand-edit generated files.** `backend/openapi.yaml` is generated
    by `npm run openapi:generate`; `docs/contracts/` by the
    contract-doc-generator; `apps/web/AGENTS.md` by `next dev`.
+7. **A PR is finished when every CI check is green, not when it is opened.**
+   After pushing, check the PR's CI: `lint-backend`, `lint-contracts`,
+   `lint-web`, `test-backend`, `test-web` and `test-contracts`.
+   `gh pr checks <number>` shows their status, and
+   `gh run view <run-id> --log-failed` shows the errors. If any fail,
+   reproduce the failure locally with the matching command under
+   *Delivery Standard*, fix it, and push again to the same PR. Repeat until
+   all six pass. Maintainers review green PRs, and a red PR is not merged.
+   Vercel and CodeRabbit are not part of this.
 
 ## Repository Map
 
