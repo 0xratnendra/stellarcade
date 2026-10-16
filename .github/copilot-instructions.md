@@ -6,8 +6,9 @@ repo root, plus [`contracts/AGENTS.md`](../contracts/AGENTS.md),
 [`apps/web/AGENTS.md`](../apps/web/AGENTS.md) for each area. Read them before
 suggesting or writing code. The short version:
 
-- One GitHub issue per PR. Edit only the files listed in the issue's
-  **Where to Implement (Exact Targets)** section.
+- Link every GitHub issue the PR closes (related issues may share a PR).
+  Edit only the files listed in those issues'
+  **Where to Implement (Exact Targets)** sections.
 - Never simulate outcomes (`Math.random()` / `randomBytes` game results),
   fabricate transaction hashes, or leave placeholder code that looks real.
   If something can't be built yet, return an honest error.

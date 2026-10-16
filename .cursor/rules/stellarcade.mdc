@@ -10,8 +10,9 @@ to them.
 
 Non-negotiables:
 
-- Work from exactly one GitHub issue. Edit only the files in its
-  **Where to Implement (Exact Targets)** section.
+- Work from linked GitHub issues (one `Closes #N` line each; related issues
+  may share a PR). Edit only the files in their
+  **Where to Implement (Exact Targets)** sections.
 - Never simulate game outcomes, fabricate transaction hashes, or leave
   placeholder code that looks finished. Return an honest error instead.
 - `soroban-sdk` 25.x + `#[contractevent]`, `stellar` CLI (not `soroban`),
