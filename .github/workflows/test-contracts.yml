@@ -7,7 +7,7 @@ on:
     branches: [main, develop]
 
 jobs:
-  test:
+  test-contracts:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
