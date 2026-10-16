@@ -4,6 +4,13 @@
  */
 require('dotenv').config({ path: '.env.test' });
 
+// Polyfill BigInt serialization for Jest worker JSON.stringify
+if (!BigInt.prototype.toJSON) {
+  BigInt.prototype.toJSON = function () {
+    return this.toString();
+  };
+}
+
 // Mock database for testing
 const knex = require('knex')({
   client: 'sqlite3',

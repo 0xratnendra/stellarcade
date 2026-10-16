@@ -256,7 +256,7 @@ impl CoinFlip {
 
         let token = get_token(&env);
         let token_client = TokenClient::new(&env, &token);
-        let current_balance = token_client.balance(env.current_contract_address());
+        let current_balance = token_client.balance(&env.current_contract_address());
         let total_available = current_balance.checked_add(wager).ok_or(Error::Overflow)?;
 
         if total_available < new_max_liability {
@@ -516,7 +516,7 @@ impl CoinFlip {
 
         let token = get_token(&env);
         let token_client = TokenClient::new(&env, &token);
-        let current_balance = token_client.balance(env.current_contract_address());
+        let current_balance = token_client.balance(&env.current_contract_address());
 
         let exposure = Self::house_exposure_snapshot(env.clone())?;
         let min_required = exposure.max_payout_liability;
@@ -539,7 +539,7 @@ impl CoinFlip {
     pub fn house_balance(env: Env) -> Result<i128, Error> {
         require_initialized(&env)?;
         let token = get_token(&env);
-        Ok(TokenClient::new(&env, &token).balance(env.current_contract_address()))
+        Ok(TokenClient::new(&env, &token).balance(&env.current_contract_address()))
     }
 }
 

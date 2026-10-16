@@ -1,3 +1,10 @@
+// Prevent Jest worker serialization failure on BigInt
+if (!BigInt.prototype.toJSON) {
+  BigInt.prototype.toJSON = function () {
+    return this.toString();
+  };
+}
+
 const StellarSdk = require('@stellar/stellar-sdk');
 
 jest.mock('../../src/config/stellar', () => ({
