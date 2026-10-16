@@ -17,6 +17,7 @@ Please describe the tests that you ran to verify your changes.
 
 ## Checklist:
 
+- [ ] All CI checks on this PR are green. The PR is ready for review only once they are.
 - [ ] My code follows the style guidelines of this project
 - [ ] I have performed a self-review of my own code
 - [ ] I have commented my code, particularly in hard-to-understand areas

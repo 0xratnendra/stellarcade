@@ -62,6 +62,15 @@ something *look* finished that wasn't. These rules are not optional.
 6. **Don't hand-edit generated files.** `backend/openapi.yaml` is generated
    by `npm run openapi:generate`; `docs/contracts/` by the
    contract-doc-generator; `apps/web/AGENTS.md` by `next dev`.
+7. **A PR is finished when every CI check is green, not when it is opened.**
+   After pushing, check the PR's CI: `lint-backend`, `lint-contracts`,
+   `lint-web`, `test-backend`, `test-web` and `test-contracts`.
+   `gh pr checks <number>` shows their status, and
+   `gh run view <run-id> --log-failed` shows the errors. If any fail,
+   reproduce the failure locally with the matching command under
+   *Delivery Standard*, fix it, and push again to the same PR. Repeat until
+   all six pass. Maintainers review green PRs, and a red PR is not merged.
+   Vercel and CodeRabbit are not part of this.
 
 ## Repository Map
 
