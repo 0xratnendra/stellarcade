@@ -1,0 +1,20 @@
+---
+description: StellarCade contribution rules for AI-written changes
+alwaysApply: true
+---
+
+Before editing, read `AGENTS.md` at the repo root and the `AGENTS.md` in each
+area you touch (`contracts/AGENTS.md`, `backend/AGENTS.md`,
+`apps/web/AGENTS.md`). They are the source of truth; this file only points
+to them.
+
+Non-negotiables:
+
+- Work from exactly one GitHub issue. Edit only the files in its
+  **Where to Implement (Exact Targets)** section.
+- Never simulate game outcomes, fabricate transaction hashes, or leave
+  placeholder code that looks finished. Return an honest error instead.
+- `soroban-sdk` 25.x + `#[contractevent]`, `stellar` CLI (not `soroban`),
+  `wasm32v1-none`, `@stellar/stellar-sdk` v14 `rpc` namespace, Next.js 16.
+- Run the checks in `AGENTS.md` → *Delivery Standard* and paste their
+  output into the PR template.

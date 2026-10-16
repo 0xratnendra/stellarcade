@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+The rules shared by every AI tool — PR scope, no faked outcomes, commands, reference files and version pins — live in `AGENTS.md` (imported below). Area rules: `contracts/AGENTS.md`, `backend/AGENTS.md`, `apps/web/AGENTS.md`.
+
+@AGENTS.md
+
 ## CRITICAL RULE — GitHub Account Changes
 
 **NEVER make any changes to GitHub accounts, organizations, or repository settings without explicit written confirmation from the user first.** This includes:
@@ -18,28 +22,23 @@ Always show the user exactly what will be changed and wait for a clear "yes, do 
 - **Backend API** (Node.js/Express) — REST API connecting the frontend to the blockchain
 - **Frontend** (`apps/web`, Next.js App Router) — the live web app: landing page, game lobby, portfolio, profile, fairness verifier (`/verify`), account hygiene (`/cleanup`), and project info (`/about`). Built on Tailwind v4 + shadcn/21st.dev component primitives. The original Vite frontend (`frontend/`) was migrated here and removed — see `apps/web/MIGRATION.md` for the migration record.
 
-Most game contracts (coin-flip, prize-pool, random-generator) are stubs with TODO placeholders. The `access-control` and `pattern-puzzle` contracts are the most complete implementations and should serve as reference.
+The core game contracts (coin-flip, prize-pool, random-generator) contain real logic, not stubs. For the current, per-crate classification (implemented / partial / stub) see [`contracts/STATUS.md`](contracts/STATUS.md).
 
 ## Smart Contract Commands
 
-Each contract is an **independent Rust crate** — there is no workspace-level `Cargo.toml`. Commands must be run from within each contract's directory.
+All contracts are members of one **Cargo workspace**, `contracts/Cargo.toml` (shared `Cargo.lock`, `target/` and release profile). Crates in its `exclude` list don't build or lint cleanly yet and aren't checked by CI. Cargo commands can be run from `contracts/` or from inside a member crate.
 
 ```bash
-# Build a single contract
-cd contracts/pattern-puzzle
-cargo build --target wasm32-unknown-unknown --release
-
-# Or use Soroban CLI (from contract directory)
-soroban contract build
-
-# Run tests for a specific contract
+# Per crate (from contracts/<crate>)
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
 cargo test
+stellar contract build            # stellar CLI, not `soroban`; fails for crates depending on another contract crate (coin-flip) — use the cargo build below
 
-# Lint (enforced in CI — must pass cleanly)
-cargo clippy -- -D warnings
-
-# Format (always run before committing)
-cargo fmt
+# Whole workspace, as CI runs it (from contracts/)
+cargo clippy --workspace --locked -- -D warnings
+cargo test --workspace --locked
+cargo build -p stellarcade-<crate> --target wasm32v1-none --release --locked
 ```
 
 ## Backend Commands
@@ -70,30 +69,31 @@ Required backend environment variables: `NODE_ENV`, `PORT`, `DATABASE_URL` (or `
 
 ### Smart Contracts (`contracts/`)
 
+Core contracts (status is from [`contracts/STATUS.md`](contracts/STATUS.md) — check there, it is kept more current than this table):
+
 | Contract | Status | Purpose |
 |---|---|---|
-| `access-control` | Implemented | Role-based access (ADMIN, OPERATOR, PAUSER, GAME roles) |
-| `pattern-puzzle` | Most complete | Commit-reveal knowledge game — use as reference |
-| `prize-pool` | Stub | Prize pool management and fee distribution |
-| `random-generator` | Stub | Provably fair RNG (server seed + client seed + nonce) |
-| `coin-flip` | Stub | 50/50 bet game calling PrizePool and RandomGenerator |
+| `access-control` | Partial — real RBAC logic, no tests | Role-based access (ADMIN, OPERATOR, PAUSER, GAME roles) |
+| `pattern-puzzle` | Partial — 13 tests, open TODOs | Commit-reveal knowledge game |
+| `prize-pool` | Partial — real logic, no tests | Prize pool management and fee distribution |
+| `random-generator` | Implemented — 32 tests | Provably fair RNG (oracle server seed, pre-committed hash, on-chain verifiable result) |
+| `coin-flip` | Real logic + 20 tests in `src/test.rs` (STATUS.md's scan only counts `lib.rs`, so it lists this as partial with zero tests) | 50/50 bet game using RandomGenerator; the reference contract |
 | `shared` | Present | Common types/utilities shared across contracts |
 
-**Contract patterns to follow:**
+**Contract patterns to follow** (full list in `contracts/AGENTS.md`; reference: `contracts/coin-flip`):
 - All contracts use `#![no_std]` (Soroban requirement)
 - Authorization via `Address::require_auth()` on all caller-sensitive functions
 - Use `instance()` storage for contract-lifetime data, `persistent()` for per-user/per-round data
-- Emit events via `env.events().publish()` or `#[contractevent]` macro
+- Emit events with `#[contractevent]` structs and `.publish(&env)` (soroban-sdk 25.x) — not `env.events().publish()`
 - Use safe arithmetic (`checked_add`, `checked_div`) with explicit `Overflow` error variants
 - Set reentrancy guard (e.g., `Claimed` flag) **before** external token transfers
-- Release profile: `opt-level = "z"`, `overflow-checks = true`, `panic = "abort"`, `lto = true`
+- `#[contracterror]` enums are append-only — never renumber variants
+- Release profile lives in the workspace `contracts/Cargo.toml`: `opt-level = "z"`, `overflow-checks = true`, `panic = "abort"`, `lto = true`
 
 ### Backend (`backend/src/`)
 
 Express app using CommonJS (`require`/`module.exports`). Routes mount under `/api`:
-- `/api/games` — game management
-- `/api/users` — user profiles
-- `/api/wallet` — wallet/balance
+`/api/auth`, `/api/games`, `/api/users`, `/api/wallet`, `/api/leaderboard`, `/api/quests`, `/api/tournaments`, `/api/webhook` (see `src/routes/index.js`). Every route documents itself in a `routeDocs` array that generates `backend/openapi.yaml` (`npm run openapi:generate`; CI runs `npm run openapi:validate`).
 
 Key layers: `routes/` → `controllers/` → `services/` → `models/` (Knex ORM)
 
@@ -106,16 +106,19 @@ Auth middleware (`middleware/auth.middleware.js`) expects a Bearer JWT (HS256).
 ## CI/CD
 
 GitHub Actions runs on push/PR to `main` or `develop`:
-- **`test-backend.yml`**: lint + `npm test`
-- **`test-contracts.yml`**: builds and tests each contract individually (shared → prize-pool → random-generator → coin-flip → pattern-puzzle)
-- **`lint.yml`**: ESLint + `cargo clippy -- -D warnings` on all PRs
+- **`test-backend.yml`**: lint + `npm run openapi:validate` + `npm test`
+- **`test-contracts.yml`**: whole-workspace wasm build (`wasm32v1-none`), `cargo test --workspace --locked`, and a `docs/contracts/` sync check
+- **`test-web.yml`**: `apps/web` typecheck, Vitest, `next build`, Playwright e2e
+- **`lint.yml`** (all PRs): backend ESLint, `cargo clippy --workspace --locked -- -D warnings`, web ESLint
 
 ## Testing
 
-**Contracts:** Tests live in `src/lib.rs` under `#[cfg(test)] mod test`, using `soroban-sdk` testutils. The pattern-puzzle contract also uses snapshot tests in `test_snapshots/`.
+**Contracts:** Tests live in the crate — `src/test.rs` behind `#[cfg(test)] mod test;` (e.g. coin-flip) or inline in `src/lib.rs` (e.g. random-generator) — using `soroban-sdk` testutils. `test_snapshots/` is gitignored.
 
-**Backend:** Jest with Supertest. Test directories: `tests/unit/` and `tests/integration/`. Currently mostly placeholder stubs.
+**Backend:** Jest with Supertest. Test directories: `tests/unit/` and `tests/integration/` (26 suites).
+
+**Web:** Vitest, with `*.test.ts(x)` next to the source file; Playwright specs in `apps/web/e2e/`.
 
 ## Deployment Scripts
 
-The `scripts/` directory contains: `deploy-contracts.sh`, `generate-keys.js`, `seed-database.js`, `setup-testnet.sh`.
+The `scripts/` directory contains: `deploy-contracts.sh`, `generate-keys.js`, `seed-database.js`, `setup-testnet.sh`, plus `setup-hooks.sh` / `setup-hooks.ps1`. `deploy-contracts.sh` still uses the old `soroban` CLI; use `stellar contract deploy` instead of copying it.
