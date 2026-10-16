@@ -75,7 +75,13 @@ Enforced by `.eslintrc.js` and `.prettierrc`:
 - `no-console` warns — use `require('../utils/logger')` instead.
 
 Run `npm run format` then `npm run lint` before committing (the pre-commit
-hook does both for staged backend files).
+hook does both whenever a backend file is staged).
+
+**Windows:** `npm run format` is `prettier --write .`, so with
+`core.autocrlf=true` it rewrites line endings in _every_ backend file. They
+then show as modified with no real change (`git diff --ignore-cr-at-eol` is
+empty). Don't stage them — `git add` only the files your issue targets,
+never `git add -A` / `git add .`.
 
 ## Tests
 
