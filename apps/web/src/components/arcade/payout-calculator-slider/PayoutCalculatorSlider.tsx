@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { PayoutCalculatorSliderProps, PayoutProjection } from "./types";
 import "./PayoutCalculatorSlider.css";
 
@@ -22,7 +22,7 @@ export const PayoutCalculatorSlider: React.FC<PayoutCalculatorSliderProps> = ({
     return val;
   };
 
-  const calculateProjection = (w: number, m: number): PayoutProjection => {
+  const calculateProjection = useCallback((w: number, m: number): PayoutProjection => {
     const gross = Math.round(w * m * 100) / 100;
     const fee = Math.round((gross * (houseEdgePct / 100)) * 100) / 100;
     const net = Math.round((gross - fee) * 100) / 100;
@@ -37,7 +37,7 @@ export const PayoutCalculatorSlider: React.FC<PayoutCalculatorSliderProps> = ({
       netPayout: net,
       netProfit: profit,
     };
-  };
+  }, [houseEdgePct]);
 
   const projection = calculateProjection(wager, multiplier);
 
@@ -45,7 +45,7 @@ export const PayoutCalculatorSlider: React.FC<PayoutCalculatorSliderProps> = ({
     if (onWagerChange) {
       onWagerChange(projection);
     }
-  }, [wager, multiplier, houseEdgePct]);
+  }, [projection, onWagerChange]);
 
   const handleWagerInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const parsed = parseFloat(e.target.value);

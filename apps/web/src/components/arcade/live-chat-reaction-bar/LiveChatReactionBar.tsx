@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useRef } from "react";
 import { LiveChatReactionBarProps, FloatingBurst } from "./types";
 import "./LiveChatReactionBar.css";
 
@@ -93,7 +93,9 @@ export const LiveChatReactionBar: React.FC<LiveChatReactionBarProps> = ({
           return (
             <button
               key={emoji}
-              ref={(el) => (buttonRefs.current[index] = el)}
+              ref={(el) => {
+                buttonRefs.current[index] = el;
+              }}
               type="button"
               className="reaction-bar-button"
               disabled={isBtnDisabled}
