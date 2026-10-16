@@ -55,6 +55,7 @@ pub enum Error {
     WagerTooLow = 10,
     WagerTooHigh = 11,
     Overflow = 12,
+    InsufficientHouseLiquidity = 13,
 }
 
 // ---------------------------------------------------------------------------
@@ -144,6 +145,20 @@ pub struct BetResolved {
     pub payout: i128,
 }
 
+#[contractevent]
+pub struct HouseFunded {
+    #[topic]
+    pub admin: Address,
+    pub amount: i128,
+}
+
+#[contractevent]
+pub struct HouseWithdrawn {
+    #[topic]
+    pub admin: Address,
+    pub amount: i128,
+}
+
 // ---------------------------------------------------------------------------
 // Contract
 // ---------------------------------------------------------------------------
@@ -218,9 +233,38 @@ impl CoinFlip {
             return Err(Error::GameAlreadyExists);
         }
 
-        // Transfer tokens from player to this contract
+        // Verify house has enough liquidity to cover this bet plus existing liability
+        let total_wagered: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalActiveWager)
+            .unwrap_or(0i128);
+        let new_total_wagered = total_wagered.checked_add(wager).ok_or(Error::Overflow)?;
+        let house_edge_bps: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::HouseEdgeBps)
+            .unwrap();
+        let max_payout_factor = (2 * BASIS_POINTS_DIVISOR)
+            .checked_sub(house_edge_bps)
+            .ok_or(Error::Overflow)?;
+        let new_max_liability = new_total_wagered
+            .checked_mul(max_payout_factor)
+            .ok_or(Error::Overflow)?
+            .checked_div(BASIS_POINTS_DIVISOR)
+            .ok_or(Error::Overflow)?;
+
         let token = get_token(&env);
-        TokenClient::new(&env, &token).transfer(&player, env.current_contract_address(), &wager);
+        let token_client = TokenClient::new(&env, &token);
+        let current_balance = token_client.balance(env.current_contract_address());
+        let total_available = current_balance.checked_add(wager).ok_or(Error::Overflow)?;
+
+        if total_available < new_max_liability {
+            return Err(Error::InsufficientHouseLiquidity);
+        }
+
+        // Transfer tokens from player to this contract
+        token_client.transfer(&player, env.current_contract_address(), &wager);
 
         // Request randomness: max=2 gives result 0 or 1
         let rng_addr: Address = env.storage().instance().get(&DataKey::RngContract).unwrap();
@@ -444,6 +488,59 @@ impl CoinFlip {
             max_payout_liability,
         })
     }
+
+    /// Fund the house bankroll. Admin only.
+    pub fn fund_house(env: Env, admin: Address, amount: i128) -> Result<(), Error> {
+        require_initialized(&env)?;
+        require_admin(&env, &admin)?;
+
+        if amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
+
+        let token = get_token(&env);
+        TokenClient::new(&env, &token).transfer(&admin, env.current_contract_address(), &amount);
+
+        HouseFunded { admin, amount }.publish(&env);
+        Ok(())
+    }
+
+    /// Withdraw from the house bankroll without dropping below current exposure liability. Admin only.
+    pub fn withdraw_house(env: Env, admin: Address, amount: i128) -> Result<(), Error> {
+        require_initialized(&env)?;
+        require_admin(&env, &admin)?;
+
+        if amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
+
+        let token = get_token(&env);
+        let token_client = TokenClient::new(&env, &token);
+        let current_balance = token_client.balance(env.current_contract_address());
+
+        let exposure = Self::house_exposure_snapshot(env.clone())?;
+        let min_required = exposure.max_payout_liability;
+
+        let remaining = current_balance
+            .checked_sub(amount)
+            .ok_or(Error::Overflow)?;
+
+        if remaining < min_required {
+            return Err(Error::InsufficientHouseLiquidity);
+        }
+
+        token_client.transfer(&env.current_contract_address(), &admin, &amount);
+
+        HouseWithdrawn { admin, amount }.publish(&env);
+        Ok(())
+    }
+
+    /// Read-only getter for the contract's token balance.
+    pub fn house_balance(env: Env) -> Result<i128, Error> {
+        require_initialized(&env)?;
+        let token = get_token(&env);
+        Ok(TokenClient::new(&env, &token).balance(env.current_contract_address()))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -454,6 +551,19 @@ fn require_initialized(env: &Env) -> Result<(), Error> {
     if !env.storage().instance().has(&DataKey::Admin) {
         return Err(Error::NotInitialized);
     }
+    Ok(())
+}
+
+fn require_admin(env: &Env, admin: &Address) -> Result<(), Error> {
+    let stored_admin: Address = env
+        .storage()
+        .instance()
+        .get(&DataKey::Admin)
+        .ok_or(Error::NotInitialized)?;
+    if admin != &stored_admin {
+        return Err(Error::NotAuthorized);
+    }
+    admin.require_auth();
     Ok(())
 }
 

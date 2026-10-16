@@ -31,7 +31,7 @@
 
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contracttype, Address, Bytes, BytesN,
-    Env, String,
+    Env, String, Vec,
 };
 
 // ---------------------------------------------------------------------------
@@ -62,6 +62,10 @@ pub enum Error {
     AlreadyFulfilled = 7,
     /// The `caller` passed to `request_random` is not in the whitelist.
     UnauthorizedCaller = 8,
+    /// No seed commitments available in the queue.
+    NoCommitmentAvailable = 9,
+    /// Fulfilled seed hash does not match the bound commitment.
+    SeedCommitmentMismatch = 10,
 }
 
 // ---------------------------------------------------------------------------
@@ -89,6 +93,8 @@ pub enum DataKey {
     RequesterPendingCount(Address),
     /// Per-requester fulfilled counters for sequencing visibility.
     RequesterFulfilledCount(Address),
+    /// FIFO queue of seed commitments pre-committed by the oracle.
+    CommitmentQueue,
 }
 
 #[contracttype]
@@ -105,6 +111,7 @@ pub enum RequestState {
 pub struct PendingEntry {
     pub caller: Address,
     pub max: u64,
+    pub commitment: BytesN<32>,
 }
 
 /// A fulfilled request with its deterministic result and the oracle seed.
@@ -120,6 +127,7 @@ pub struct FulfilledEntry {
     pub server_seed: BytesN<32>,
     /// `sha256(server_seed || request_id_be)[0..8] % max`; always in `[0, max)`.
     pub result: u64,
+    pub commitment: BytesN<32>,
 }
 
 #[contracttype]
@@ -131,6 +139,7 @@ pub struct RequestStatus {
     pub max: Option<u64>,
     pub result: Option<u64>,
     pub server_seed: Option<BytesN<32>>,
+    pub commitment: Option<BytesN<32>>,
 }
 
 /// Describes the entropy source used by this contract.
@@ -198,6 +207,13 @@ pub struct RandomRequested {
     #[topic]
     pub caller: Address,
     pub max: u64,
+    pub commitment: BytesN<32>,
+}
+
+/// Emits the count of seed commitments appended to the queue.
+#[contractevent]
+pub struct SeedsCommitted {
+    pub count: u32,
 }
 
 /// Emits the server_seed so off-chain verifiers do not need a `get_result` call.
@@ -280,6 +296,58 @@ impl RandomGenerator {
     }
 
     // -----------------------------------------------------------------------
+    // commit_seeds / get_commitment_queue_len
+    // -----------------------------------------------------------------------
+
+    /// Commit a batch of oracle seed commitments (sha256 of server seeds) to the FIFO queue.
+    /// Oracle only. Returns the new queue length.
+    pub fn commit_seeds(
+        env: Env,
+        oracle: Address,
+        commitments: Vec<BytesN<32>>,
+    ) -> Result<u32, Error> {
+        require_initialized(&env)?;
+        require_oracle(&env, &oracle)?;
+
+        let count = commitments.len();
+        if count == 0 {
+            return Ok(Self::get_commitment_queue_len(env));
+        }
+
+        let key = DataKey::CommitmentQueue;
+        let mut queue: Vec<BytesN<32>> = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| Vec::new(&env));
+
+        for c in commitments.iter() {
+            queue.push_back(c);
+        }
+
+        env.storage().persistent().set(&key, &queue);
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_BUMP_LEDGERS,
+            PERSISTENT_BUMP_LEDGERS,
+        );
+
+        SeedsCommitted { count }.publish(&env);
+
+        Ok(queue.len())
+    }
+
+    /// Read the number of pending seed commitments available in the queue.
+    pub fn get_commitment_queue_len(env: Env) -> u32 {
+        let key = DataKey::CommitmentQueue;
+        env.storage()
+            .persistent()
+            .get::<DataKey, Vec<BytesN<32>>>(&key)
+            .map(|q| q.len())
+            .unwrap_or(0)
+    }
+
+    // -----------------------------------------------------------------------
     // request_random
     // -----------------------------------------------------------------------
 
@@ -288,6 +356,9 @@ impl RandomGenerator {
     /// `max` must be >= 2. The fulfilled result will be in `[0, max - 1]`.
     /// `request_id` must be globally unique — rejected if a pending or
     /// fulfilled entry for the same ID already exists.
+    ///
+    /// Pops the next commitment from the FIFO queue. If the queue is empty,
+    /// fails with `NoCommitmentAvailable`.
     pub fn request_random(
         env: Env,
         caller: Address,
@@ -324,9 +395,31 @@ impl RandomGenerator {
             return Err(Error::DuplicateRequestId);
         }
 
+        // Pop next commitment from FIFO queue
+        let queue_key = DataKey::CommitmentQueue;
+        let mut queue: Vec<BytesN<32>> = env
+            .storage()
+            .persistent()
+            .get(&queue_key)
+            .unwrap_or_else(|| Vec::new(&env));
+
+        if queue.is_empty() {
+            return Err(Error::NoCommitmentAvailable);
+        }
+
+        let commitment = queue.get(0).unwrap();
+        queue.remove(0);
+        env.storage().persistent().set(&queue_key, &queue);
+        env.storage().persistent().extend_ttl(
+            &queue_key,
+            PERSISTENT_BUMP_LEDGERS,
+            PERSISTENT_BUMP_LEDGERS,
+        );
+
         let entry = PendingEntry {
             caller: caller.clone(),
             max,
+            commitment: commitment.clone(),
         };
         let key = DataKey::PendingRequest(request_id);
         env.storage().persistent().set(&key, &entry);
@@ -356,6 +449,7 @@ impl RandomGenerator {
             request_id,
             caller,
             max,
+            commitment,
         }
         .publish(&env);
 
@@ -371,9 +465,9 @@ impl RandomGenerator {
     /// The result is derived as:
     ///   `sha256(server_seed || request_id_be_bytes)[0..8] % max`
     ///
-    /// Both `server_seed` and `result` are persisted for on-chain verification.
-    /// Fairness holds when the oracle published `sha256(server_seed)` before
-    /// the corresponding `request_random` call was submitted.
+    /// Enforces that `sha256(server_seed) == pending.commitment`, proving the seed
+    /// was committed on-chain before the request was created.
+    /// Both `server_seed`, `commitment` and `result` are persisted for on-chain verification.
     pub fn fulfill_random(
         env: Env,
         oracle: Address,
@@ -411,6 +505,21 @@ impl RandomGenerator {
                     Error::RequestNotFound
                 })?;
 
+        // Verify that sha256(server_seed) matches the on-chain commitment bound to this request
+        let digest: BytesN<32> = env
+            .crypto()
+            .sha256(&Bytes::from_slice(&env, &server_seed.to_array()))
+            .into();
+
+        if digest != pending.commitment {
+            RandomFulfillmentRejected {
+                request_id,
+                reason: Error::SeedCommitmentMismatch as u32,
+            }
+            .publish(&env);
+            return Err(Error::SeedCommitmentMismatch);
+        }
+
         let result = derive_result(&env, &server_seed, request_id, pending.max);
 
         // Remove the pending entry; write the fulfilled entry.
@@ -434,6 +543,7 @@ impl RandomGenerator {
             max: pending.max,
             server_seed: server_seed.clone(),
             result,
+            commitment: pending.commitment.clone(),
         };
         let fulfilled_key = DataKey::FulfilledRequest(request_id);
         env.storage().persistent().set(&fulfilled_key, &fulfilled);
@@ -537,6 +647,7 @@ impl RandomGenerator {
                 max: Some(entry.max),
                 result: Some(entry.result),
                 server_seed: Some(entry.server_seed),
+                commitment: Some(entry.commitment),
             });
         }
 
@@ -552,6 +663,7 @@ impl RandomGenerator {
                 max: Some(entry.max),
                 result: None,
                 server_seed: None,
+                commitment: Some(entry.commitment),
             });
         }
 
@@ -562,6 +674,7 @@ impl RandomGenerator {
             max: None,
             result: None,
             server_seed: None,
+            commitment: None,
         })
     }
 
@@ -749,6 +862,23 @@ mod test {
         BytesN::from_array(env, &arr)
     }
 
+    fn commit_seeds_for_test(
+        env: &Env,
+        client: &RandomGeneratorClient<'_>,
+        oracle: &Address,
+        seeds: &[BytesN<32>],
+    ) {
+        let mut commitments = soroban_sdk::Vec::new(env);
+        for s in seeds {
+            let h: BytesN<32> = env
+                .crypto()
+                .sha256(&Bytes::from_slice(env, &s.to_array()))
+                .into();
+            commitments.push_back(h);
+        }
+        client.commit_seeds(oracle, &commitments);
+    }
+
     // ------------------------------------------------------------------
     // 1. Request creation stores a pending entry
     // ------------------------------------------------------------------
@@ -756,9 +886,10 @@ mod test {
     #[test]
     fn test_request_creates_pending_entry() {
         let env = Env::default();
-        let (client, _, _, game) = setup(&env);
+        let (client, _, oracle, game) = setup(&env);
         env.mock_all_auths();
 
+        commit_seeds_for_test(&env, &client, &oracle, &[seed(&env, 1)]);
         client.request_random(&game, &1u64, &6u64);
 
         // After request, result is not yet available.
@@ -785,6 +916,7 @@ mod test {
         let request_id = 42u64;
         let server_seed = seed(&env, 0xAB);
 
+        commit_seeds_for_test(&env, &client, &oracle, &[server_seed.clone()]);
         client.request_random(&game, &request_id, &max);
         client.fulfill_random(&oracle, &request_id, &server_seed);
 
@@ -803,9 +935,10 @@ mod test {
     #[test]
     fn test_duplicate_request_id_pending_rejected() {
         let env = Env::default();
-        let (client, _, _, game) = setup(&env);
+        let (client, _, oracle, game) = setup(&env);
         env.mock_all_auths();
 
+        commit_seeds_for_test(&env, &client, &oracle, &[seed(&env, 1), seed(&env, 2)]);
         client.request_random(&game, &1u64, &2u64);
 
         let result = client.try_request_random(&game, &1u64, &2u64);
@@ -823,6 +956,7 @@ mod test {
         env.mock_all_auths();
 
         let s = seed(&env, 1);
+        commit_seeds_for_test(&env, &client, &oracle, &[s.clone(), seed(&env, 2)]);
         client.request_random(&game, &1u64, &2u64);
         client.fulfill_random(&oracle, &1u64, &s);
 
@@ -842,6 +976,7 @@ mod test {
         env.mock_all_auths();
 
         let s = seed(&env, 2);
+        commit_seeds_for_test(&env, &client, &oracle, &[s.clone()]);
         client.request_random(&game, &1u64, &2u64);
         client.fulfill_random(&oracle, &1u64, &s);
 
@@ -860,6 +995,7 @@ mod test {
         let max = 9u64;
         let server_seed = seed(&env, 7);
 
+        commit_seeds_for_test(&env, &client, &oracle, &[server_seed.clone()]);
         client.request_random(&game, &request_id, &max);
         client.fulfill_random(&oracle, &request_id, &server_seed);
 
@@ -909,10 +1045,11 @@ mod test {
     #[test]
     fn test_unauthorized_fulfill_rejected() {
         let env = Env::default();
-        let (client, _, _, game) = setup(&env);
+        let (client, _, oracle, game) = setup(&env);
         env.mock_all_auths();
 
         let s = seed(&env, 3);
+        commit_seeds_for_test(&env, &client, &oracle, &[s.clone()]);
         client.request_random(&game, &1u64, &2u64);
 
         let impostor = Address::generate(&env);
@@ -934,6 +1071,7 @@ mod test {
 
         for i in 0u64..20 {
             let s = seed(&env, i as u8);
+            commit_seeds_for_test(&env, &client, &oracle, &[s.clone()]);
             client.request_random(&game, &i, &max);
             client.fulfill_random(&oracle, &i, &s);
             let entry = client.get_result(&i);
@@ -961,6 +1099,7 @@ mod test {
 
         for i in 0u64..8 {
             let s = seed(&env, (i * 37) as u8); // spread out seed bytes
+            commit_seeds_for_test(&env, &client, &oracle, &[s.clone()]);
             client.request_random(&game, &i, &max);
             client.fulfill_random(&oracle, &i, &s);
             results[i as usize] = client.get_result(&i).result;
@@ -1026,9 +1165,10 @@ mod test {
     #[test]
     fn test_get_result_while_pending_returns_error() {
         let env = Env::default();
-        let (client, _, _, game) = setup(&env);
+        let (client, _, oracle, game) = setup(&env);
         env.mock_all_auths();
 
+        commit_seeds_for_test(&env, &client, &oracle, &[seed(&env, 1)]);
         client.request_random(&game, &1u64, &4u64);
 
         // Pending, not yet fulfilled — must return RequestNotFound.
@@ -1065,6 +1205,7 @@ mod test {
         let seed_a = seed(&env, 0x11);
         let seed_b = seed(&env, 0x22);
 
+        commit_seeds_for_test(&env, &client, &oracle, &[seed_a.clone(), seed_b.clone()]);
         client.request_random(&game, &10u64, &max_a);
         client.request_random(&game, &20u64, &max_b);
 
@@ -1157,6 +1298,7 @@ mod test {
         // Fulfill a request before setting metadata
         let max = 100u64;
         let s = seed(&env, 0x42);
+        commit_seeds_for_test(&env, &client, &oracle, &[s.clone(), s.clone()]);
         client.request_random(&game, &1u64, &max);
         client.fulfill_random(&oracle, &1u64, &s);
         let result_before = client.get_result(&1u64).result;
@@ -1303,8 +1445,10 @@ mod test {
     #[test]
     fn test_requester_summary_tracks_pending() {
         let env = Env::default();
-        let (client, _, _, game) = setup(&env);
+        let (client, _, oracle, game) = setup(&env);
         env.mock_all_auths();
+
+        commit_seeds_for_test(&env, &client, &oracle, &[seed(&env, 1), seed(&env, 2)]);
 
         // Make two pending requests
         client.request_random(&game, &1u64, &6u64);
@@ -1326,6 +1470,8 @@ mod test {
         let env = Env::default();
         let (client, _, oracle, game) = setup(&env);
         env.mock_all_auths();
+
+        commit_seeds_for_test(&env, &client, &oracle, &[seed(&env, 1), seed(&env, 2)]);
 
         // Make and fulfill two requests
         client.request_random(&game, &1u64, &6u64);
@@ -1349,6 +1495,13 @@ mod test {
         let env = Env::default();
         let (client, _, oracle, game) = setup(&env);
         env.mock_all_auths();
+
+        commit_seeds_for_test(
+            &env,
+            &client,
+            &oracle,
+            &[seed(&env, 1), seed(&env, 2), seed(&env, 3)],
+        );
 
         // Make three requests, fulfill two
         client.request_random(&game, &1u64, &6u64);
@@ -1394,6 +1547,8 @@ mod test {
         let (client, _, oracle, game) = setup(&env);
         env.mock_all_auths();
 
+        commit_seeds_for_test(&env, &client, &oracle, &[seed(&env, 1)]);
+
         client.request_random(&game, &1u64, &6u64);
         client.fulfill_random(&oracle, &1u64, &seed(&env, 1));
 
@@ -1430,6 +1585,19 @@ mod test {
         client.authorize(&admin, &game1);
         client.authorize(&admin, &game2);
 
+        commit_seeds_for_test(
+            &env,
+            &client,
+            &oracle,
+            &[
+                seed(&env, 1),
+                seed(&env, 2),
+                seed(&env, 3),
+                seed(&env, 4),
+                seed(&env, 5),
+            ],
+        );
+
         // Game1 makes 2 requests, fulfills 1
         client.request_random(&game1, &1u64, &6u64);
         client.request_random(&game1, &2u64, &10u64);
@@ -1452,5 +1620,91 @@ mod test {
         assert_eq!(summary2.total_requests, 3);
         assert_eq!(summary2.pending_count, 1);
         assert_eq!(summary2.fulfilled_count, 2);
+    }
+
+    // ------------------------------------------------------------------
+    // 31. Seed commitment enforcement tests (#1374)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_seed_commitment_mismatch_rejected() {
+        let env = Env::default();
+        let (client, _, oracle, game) = setup(&env);
+        env.mock_all_auths();
+
+        let honest_seed = seed(&env, 0x11);
+        let malicious_seed = seed(&env, 0x22);
+
+        commit_seeds_for_test(&env, &client, &oracle, &[honest_seed.clone()]);
+        client.request_random(&game, &1u64, &2u64);
+
+        // Fulfilling with malicious_seed must fail with SeedCommitmentMismatch
+        let res = client.try_fulfill_random(&oracle, &1u64, &malicious_seed);
+        assert_eq!(res, Err(Ok(Error::SeedCommitmentMismatch)));
+
+        // Request can still be fulfilled with honest_seed
+        client.fulfill_random(&oracle, &1u64, &honest_seed);
+        let result = client.get_result(&1u64);
+        assert_eq!(result.server_seed, honest_seed);
+    }
+
+    #[test]
+    fn test_request_random_empty_queue_rejected() {
+        let env = Env::default();
+        let (client, _, _, game) = setup(&env);
+        env.mock_all_auths();
+
+        // Queue is empty -> fails with NoCommitmentAvailable
+        let res = client.try_request_random(&game, &1u64, &2u64);
+        assert_eq!(res, Err(Ok(Error::NoCommitmentAvailable)));
+    }
+
+    #[test]
+    fn test_commitments_consumed_in_fifo_order() {
+        let env = Env::default();
+        let (client, _, oracle, game) = setup(&env);
+        env.mock_all_auths();
+
+        let s1 = seed(&env, 1);
+        let s2 = seed(&env, 2);
+        let s3 = seed(&env, 3);
+
+        commit_seeds_for_test(
+            &env,
+            &client,
+            &oracle,
+            &[s1.clone(), s2.clone(), s3.clone()],
+        );
+        assert_eq!(client.get_commitment_queue_len(), 3);
+
+        client.request_random(&game, &100u64, &2u64);
+        assert_eq!(client.get_commitment_queue_len(), 2);
+
+        client.request_random(&game, &200u64, &2u64);
+        assert_eq!(client.get_commitment_queue_len(), 1);
+
+        client.request_random(&game, &300u64, &2u64);
+        assert_eq!(client.get_commitment_queue_len(), 0);
+
+        // First request bound to s1, second to s2, third to s3
+        client.fulfill_random(&oracle, &100u64, &s1);
+        client.fulfill_random(&oracle, &200u64, &s2);
+        client.fulfill_random(&oracle, &300u64, &s3);
+
+        assert_eq!(client.get_result(&100u64).server_seed, s1);
+        assert_eq!(client.get_result(&200u64).server_seed, s2);
+        assert_eq!(client.get_result(&300u64).server_seed, s3);
+    }
+
+    #[test]
+    fn test_commit_seeds_oracle_only() {
+        let env = Env::default();
+        let (client, _, _, _) = setup(&env);
+        env.mock_all_auths();
+
+        let non_oracle = Address::generate(&env);
+        let commitments = soroban_sdk::Vec::new(&env);
+        let res = client.try_commit_seeds(&non_oracle, &commitments);
+        assert!(res.is_err());
     }
 }

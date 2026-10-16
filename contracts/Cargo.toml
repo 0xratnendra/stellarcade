@@ -27,7 +27,6 @@ members = [
     "cross-contract-handler",
     "daily-trivia",
     "deployment-scripts",
-    "dice-roll",
     "dynamic-fee-policy",
     "duel-engine",
     "emergency-pause",
@@ -184,6 +183,8 @@ exclude = [
     "contract-address-registry",
     "reward-router",
     "tournament-lobby",
+    # Awaiting seed commitment migration milestone
+    "dice-roll",
 ]
 
 [profile.release]
