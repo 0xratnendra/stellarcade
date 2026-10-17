@@ -19,10 +19,17 @@ import TournamentsPage from "./tournaments/page";
  */
 
 const PAGES = [
-  { name: "leaderboard", Page: LeaderboardPage, empty: /Nobody on the board yet/i },
+  {
+    name: "leaderboard",
+    Page: LeaderboardPage,
+    empty: /Nobody on the board yet/i,
+  },
   { name: "history", Page: HistoryPage, empty: /No rounds settled yet/i },
-  { name: "tournaments", Page: TournamentsPage, empty: /No tournaments scheduled yet/i },
-  { name: "quests", Page: QuestsPage, empty: /No quests available yet/i },
+  {
+    name: "tournaments",
+    Page: TournamentsPage,
+    empty: /No tournaments scheduled yet/i,
+  },
   { name: "rewards", Page: RewardsPage, empty: /No rewards to claim yet/i },
 ] as const;
 

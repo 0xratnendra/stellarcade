@@ -26,10 +26,19 @@ jest.mock('../../src/config/stellar', () => ({
   server: {
     root: jest.fn().mockResolvedValue({}),
   },
+  rpc: {
+    getHealth: jest.fn().mockResolvedValue({ status: 'healthy' }),
+    getLatestLedger: jest.fn().mockResolvedValue({ id: '12345', sequence: 100 }),
+  },
   network: 'testnet',
   passphrase: 'Test SDF Network ; September 2015',
   horizonUrl: 'https://horizon-testnet.stellar.org',
   getContractClient: jest.fn(),
+}));
+
+// Mock soroban service
+jest.mock('../../src/services/soroban.service', () => ({
+  simulate: jest.fn().mockResolvedValue({}),
 }));
 
 // Mock logger to suppress output during tests
@@ -41,7 +50,8 @@ jest.mock('../../src/utils/logger', () => ({
 
 const db = require('../../src/config/database');
 const { client: redisClient } = require('../../src/config/redis');
-const { server: horizonServer } = require('../../src/config/stellar');
+const { server: horizonServer, rpc: sorobanRpc } = require('../../src/config/stellar');
+const sorobanService = require('../../src/services/soroban.service');
 const { getDeepHealth } = require('../../src/controllers/health.controller');
 const healthService = require('../../src/services/health.service');
 
@@ -58,9 +68,15 @@ const delayResolve = (ms, value) =>
 describe('GET /api/health/deep', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.COIN_FLIP_CONTRACT_ID;
+    delete process.env.RANDOM_GENERATOR_CONTRACT_ID;
+    delete process.env.RNG_CONTRACT_ID;
     db.raw.mockResolvedValue({});
     redisClient.ping.mockResolvedValue('PONG');
     horizonServer.root.mockResolvedValue({});
+    sorobanRpc.getHealth.mockResolvedValue({ status: 'healthy' });
+    sorobanRpc.getLatestLedger.mockResolvedValue({ id: '12345', sequence: 100 });
+    sorobanService.simulate.mockResolvedValue({});
   });
 
   describe('all-up scenario', () => {
@@ -72,6 +88,12 @@ describe('GET /api/health/deep', () => {
       expect(res.body.dependencies.db.status).toBe('healthy');
       expect(res.body.dependencies.redis.status).toBe('healthy');
       expect(res.body.dependencies.stellar.status).toBe('healthy');
+      expect(res.body.soroban.status).toBe('healthy');
+      expect(typeof res.body.soroban.latencyMs).toBe('number');
+      expect(res.body.contracts).toEqual({
+        coinFlip: { status: 'not_configured' },
+        randomGenerator: { status: 'not_configured' },
+      });
       expect(res.body.dependencies.db.timeout_ms).toBe(5000);
       expect(res.body.dependencies.redis.timeout_ms).toBe(5000);
       expect(res.body.dependencies.stellar.timeout_ms).toBe(5000);
@@ -223,6 +245,68 @@ describe('GET /api/health/deep', () => {
 
       const parsed = new Date(res.body.timestamp);
       expect(parsed.toISOString()).toBe(res.body.timestamp);
+    });
+  });
+
+  describe('soroban and contracts checks', () => {
+    test('all checks healthy with configured contracts', async () => {
+      process.env.COIN_FLIP_CONTRACT_ID =
+        'CD2JPFUCKNDMA3OVYVQOAELTMR5VQPMAA6J6GJYQE2SQFNGKCBSSOKG5';
+      process.env.RANDOM_GENERATOR_CONTRACT_ID =
+        'CD3VAX3DZEGWEMMPK35MYPS43HMFTNHZK5SY22JLEHHENXJATWP4HJY5';
+      sorobanService.simulate.mockResolvedValue({ active_game_count: 0 });
+
+      const res = await request(app).get('/api/health/deep');
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('healthy');
+      expect(res.body.soroban.status).toBe('healthy');
+      expect(res.body.contracts.coinFlip.status).toBe('ok');
+      expect(res.body.contracts.randomGenerator.status).toBe('ok');
+    });
+
+    test('RPC down → degraded', async () => {
+      sorobanRpc.getHealth.mockRejectedValue(new Error('RPC endpoint unreachable'));
+
+      const res = await request(app).get('/api/health/deep');
+
+      expect(res.status).toBe(503);
+      expect(res.body.status).toBe('degraded');
+      expect(res.body.soroban.status).toBe('unhealthy');
+      expect(res.body.soroban.error).toMatch(/RPC endpoint unreachable/);
+    });
+
+    test('One contract read failing → degraded, with the right contract flagged', async () => {
+      process.env.COIN_FLIP_CONTRACT_ID =
+        'CD2JPFUCKNDMA3OVYVQOAELTMR5VQPMAA6J6GJYQE2SQFNGKCBSSOKG5';
+      process.env.RANDOM_GENERATOR_CONTRACT_ID =
+        'CD3VAX3DZEGWEMMPK35MYPS43HMFTNHZK5SY22JLEHHENXJATWP4HJY5';
+
+      sorobanService.simulate.mockImplementation((contractId) => {
+        if (contractId === process.env.COIN_FLIP_CONTRACT_ID) {
+          throw new Error('Coin flip simulation failed');
+        }
+        return Promise.resolve({ config: 'active' });
+      });
+
+      const res = await request(app).get('/api/health/deep');
+
+      expect(res.status).toBe(503);
+      expect(res.body.status).toBe('degraded');
+      expect(res.body.contracts.coinFlip.status).toBe('error');
+      expect(res.body.contracts.coinFlip.error).toMatch(/Coin flip simulation failed/);
+      expect(res.body.contracts.randomGenerator.status).toBe('ok');
+    });
+
+    test('missing contract ID config shows as not_configured, not as a crash', async () => {
+      delete process.env.COIN_FLIP_CONTRACT_ID;
+      delete process.env.RANDOM_GENERATOR_CONTRACT_ID;
+
+      const res = await request(app).get('/api/health/deep');
+
+      expect(res.status).toBe(200);
+      expect(res.body.contracts.coinFlip.status).toBe('not_configured');
+      expect(res.body.contracts.randomGenerator.status).toBe('not_configured');
     });
   });
 });

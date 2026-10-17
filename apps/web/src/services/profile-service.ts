@@ -33,13 +33,8 @@ export function validateUsername(raw: string): string | null {
   return null;
 }
 
-function getStoreToken(): string | null {
-  const token = profileStore.getState().auth.token ?? null;
-  if (token) return token;
-  if (process.env.NODE_ENV === "development") {
-    return "test-jwt-token";
-  }
-  return null;
+export function getStoreToken(): string | null {
+  return profileStore.getState().auth.token ?? null;
 }
 
 /**
@@ -88,7 +83,10 @@ export async function fetchProfile(address: string): Promise<ProfileLookup> {
   const result = await client.getProfile(address);
 
   if (result.success && result.data) {
-    profileStore.dispatch({ type: "PROFILE_SET", payload: { profile: result.data } });
+    profileStore.dispatch({
+      type: "PROFILE_SET",
+      payload: { profile: result.data },
+    });
     return { status: "found", profile: result.data };
   }
 
@@ -99,7 +97,9 @@ export async function fetchProfile(address: string): Promise<ProfileLookup> {
 
   return {
     status: "error",
-    message: result.success ? "Unexpected empty profile response." : result.error.message,
+    message: result.success
+      ? "Unexpected empty profile response."
+      : result.error.message,
   };
 }
 
@@ -116,12 +116,17 @@ export async function createProfile(input: {
   address: string;
   username: string;
   ageConfirmed: boolean;
-}): Promise<{ ok: true; profile: UserProfile } | { ok: false; message: string }> {
+}): Promise<
+  { ok: true; profile: UserProfile } | { ok: false; message: string }
+> {
   const client = createProfileApiClient();
   const created = await client.createProfile(input);
 
   if (created.success && created.data) {
-    profileStore.dispatch({ type: "PROFILE_SET", payload: { profile: created.data } });
+    profileStore.dispatch({
+      type: "PROFILE_SET",
+      payload: { profile: created.data },
+    });
     return { ok: true, profile: created.data };
   }
 
@@ -136,19 +141,26 @@ export async function createProfile(input: {
     });
 
     if (updated.success && updated.data) {
-      profileStore.dispatch({ type: "PROFILE_SET", payload: { profile: updated.data } });
+      profileStore.dispatch({
+        type: "PROFILE_SET",
+        payload: { profile: updated.data },
+      });
       return { ok: true, profile: updated.data };
     }
 
     return {
       ok: false,
-      message: updated.success ? "Profile update returned no data." : updated.error.message,
+      message: updated.success
+        ? "Profile update returned no data."
+        : updated.error.message,
     };
   }
 
   return {
     ok: false,
-    message: created.success ? "Profile creation returned no data." : created.error.message,
+    message: created.success
+      ? "Profile creation returned no data."
+      : created.error.message,
   };
 }
 
@@ -156,23 +168,35 @@ export async function createProfile(input: {
 export async function saveUsername(
   address: string,
   username: string,
-): Promise<{ ok: true; profile: UserProfile } | { ok: false; message: string }> {
+): Promise<
+  { ok: true; profile: UserProfile } | { ok: false; message: string }
+> {
   const client = createProfileApiClient();
-  const result = await client.updateProfile({ address, username: username.trim() });
+  const result = await client.updateProfile({
+    address,
+    username: username.trim(),
+  });
 
   if (result.success && result.data) {
-    profileStore.dispatch({ type: "PROFILE_SET", payload: { profile: result.data } });
+    profileStore.dispatch({
+      type: "PROFILE_SET",
+      payload: { profile: result.data },
+    });
     return { ok: true, profile: result.data };
   }
 
   return {
     ok: false,
-    message: result.success ? "Profile update returned no data." : result.error.message,
+    message: result.success
+      ? "Profile update returned no data."
+      : result.error.message,
   };
 }
 
 /** True when the wallet still owes us a username and/or an age confirmation. */
-export function needsOnboarding(profile: UserProfile | null | undefined): boolean {
+export function needsOnboarding(
+  profile: UserProfile | null | undefined,
+): boolean {
   if (!profile) return true;
   return !profile.username?.trim() || !profile.ageConfirmedAt;
 }
@@ -204,7 +228,8 @@ export async function authenticateWallet(
   try {
     signature = await signMessage(challengeRes.data.challenge);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to sign login challenge";
+    const message =
+      err instanceof Error ? err.message : "Failed to sign login challenge";
     return { ok: false, message };
   }
 
@@ -215,9 +240,15 @@ export async function authenticateWallet(
 
   profileStore.dispatch({
     type: "AUTH_SET",
-    payload: { userId: loginRes.data.profile.address, token: loginRes.data.token },
+    payload: {
+      userId: loginRes.data.profile.address,
+      token: loginRes.data.token,
+    },
   });
-  profileStore.dispatch({ type: "PROFILE_SET", payload: { profile: loginRes.data.profile } });
+  profileStore.dispatch({
+    type: "PROFILE_SET",
+    payload: { profile: loginRes.data.profile },
+  });
 
   return { ok: true };
 }

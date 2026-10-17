@@ -18,16 +18,16 @@
 
 ## 🌐 Live Environment & Deployed Services (Stellar Testnet)
 
-| Service / Contract | Type / Hosting | Live Endpoint / Address |
-|---|---|---|
-| **Backend API** | Render Web Service | `https://stellarcade-backend.onrender.com/api` |
-| **Arbiter Engine** | Render Web Service | `https://stellarcade-arbiter.onrender.com` |
-| **Telegram Bot** | Render Web Service | Active via `@StellarcadeOfficialBot` |
-| **Coin Flip Contract** | Soroban Testnet | `CDP77TELLHACC46EHR3N4ISRWJME446AGK5RM7D4D42YKDCB4LXICKTE` |
-| **Prize Pool Contract** | Soroban Testnet | `CBVNIITX42KQA3MKNUBKG4YIK4FCASZQWKWGHY3YYMM4ANGZ6MOZI2EC` |
-| **Random Generator Contract** | Soroban Testnet | `CAMYBISVQSSVJ3EPAZQWKPTTPGTYY5XIS2BZAG4TYFWTUKHQNPVXAV4O` |
-| **Access Control Contract** | Soroban Testnet | `CC2IRAYC3CT5KAV4PZKXKCE45Z3QAJQSJH7P5J3GITJT4T3KZ6634R7K` |
-| **Achievement Badge Contract** | Soroban Testnet | `CC7SDE6RRV4X7XRHU6OM6GLDIKBC6EZYNHTRGDLEHYNVUWWO3LUJLA5M` |
+| Service / Contract             | Type / Hosting     | Live Endpoint / Address                                    |
+| ------------------------------ | ------------------ | ---------------------------------------------------------- |
+| **Backend API**                | Render Web Service | `https://stellarcade-backend.onrender.com/api`             |
+| **Arbiter Engine**             | Render Web Service | `https://stellarcade-arbiter.onrender.com`                 |
+| **Telegram Bot**               | Render Web Service | Active via `@StellarcadeOfficialBot`                       |
+| **Coin Flip Contract**         | Soroban Testnet    | `CDP77TELLHACC46EHR3N4ISRWJME446AGK5RM7D4D42YKDCB4LXICKTE` |
+| **Prize Pool Contract**        | Soroban Testnet    | `CBVNIITX42KQA3MKNUBKG4YIK4FCASZQWKWGHY3YYMM4ANGZ6MOZI2EC` |
+| **Random Generator Contract**  | Soroban Testnet    | `CAMYBISVQSSVJ3EPAZQWKPTTPGTYY5XIS2BZAG4TYFWTUKHQNPVXAV4O` |
+| **Access Control Contract**    | Soroban Testnet    | `CC2IRAYC3CT5KAV4PZKXKCE45Z3QAJQSJH7P5J3GITJT4T3KZ6634R7K` |
+| **Achievement Badge Contract** | Soroban Testnet    | `CC7SDE6RRV4X7XRHU6OM6GLDIKBC6EZYNHTRGDLEHYNVUWWO3LUJLA5M` |
 
 ## 🛠 Tech Stack
 
@@ -47,6 +47,8 @@ npm install @stellarcade/sdk @stellar/stellar-sdk
 For setup and client configuration details, see the [stellarcade-sdk repository](https://github.com/TheBlockCade/stellarcade-sdk).
 
 ## 🚀 Quick Start
+
+> **New Contributor?** Follow our step-by-step [**End-to-End Testnet Quickstart**](docs/QUICKSTART.md) to run the full stack locally, deploy/wire contracts, and play a real round on testnet.
 
 ### Prerequisites
 
