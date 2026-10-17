@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import Link from "next/link";
 import { Award, Sparkles, CheckCircle2, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
@@ -19,28 +19,14 @@ const CATEGORY_TONE: Record<Quest["category"], string> = {
 };
 
 export default function QuestsPage() {
-  const { items: loadedQuests } = useQuests();
-  const [claimedIds, setClaimedIds] = useState<string[]>([]);
-  const [claimingId, setClaimingId] = useState<string | null>(null);
-
-  const handleClaim = async (questId: string) => {
-    setClaimingId(questId);
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      setClaimedIds((prev) => [...prev, questId]);
-    } finally {
-      setClaimingId(null);
-    }
-  };
+  const { items: loadedQuests, isLoading, error } = useQuests();
 
   const quests = loadedQuests;
   const hasQuests = quests.length > 0;
 
-  // XP is only ever the sum of quests actually claimed — never a starting
-  // balance. The page previously seeded this at 450 XP, so a brand-new
-  // account opened with XP it had not earned.
+  // XP is only ever the sum of quests actually claimed.
   const totalEarnedXp = quests
-    .filter((q) => claimedIds.includes(q.id) || q.claimed)
+    .filter((q) => q.claimed)
     .reduce((sum, q) => sum + q.xpReward, 0);
   const completedCount = quests.filter((q) => q.completed).length;
 
@@ -71,13 +57,21 @@ export default function QuestsPage() {
       >
         {hasQuests ? (
           <p className="text-xs text-muted-foreground">
-            <span className="font-semibold text-primary">{completedCount}</span> of {quests.length}{" "}
-            quests ready to claim or already complete.
+            <span className="font-semibold text-primary">{completedCount}</span>{" "}
+            of {quests.length} quests completed.
           </p>
         ) : null}
       </PageHeader>
 
-      {!hasQuests ? (
+      {isLoading ? (
+        <section className="rounded-2xl border border-border bg-card/60 p-12 text-center backdrop-blur-sm">
+          <p className="text-sm text-muted-foreground">Loading quests…</p>
+        </section>
+      ) : error ? (
+        <section className="rounded-2xl border border-destructive/30 bg-destructive/10 p-6 text-center backdrop-blur-sm">
+          <p className="text-sm font-medium text-destructive">{error}</p>
+        </section>
+      ) : !hasQuests ? (
         <section className="rounded-2xl border border-border bg-card/60 backdrop-blur-sm">
           <EmptyState
             size="lg"
@@ -98,9 +92,8 @@ export default function QuestsPage() {
         <ul className="flex flex-col gap-3">
           {quests.map((q, idx) => {
             const pct = Math.min(100, Math.round((q.progress / q.total) * 100));
-            const isProcessing = claimingId === q.id;
-            const isClaimed = q.claimed || claimedIds.includes(q.id);
-            const isClaimable = q.completed && !isClaimed;
+            const isClaimed = q.claimed;
+            const isClaimable = false; // XP/badge minting is coming soon; never show as claimable
 
             return (
               <motion.li
@@ -115,7 +108,10 @@ export default function QuestsPage() {
               >
                 <div className="min-w-0 flex-1 basis-80">
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className={cn("rounded-md", CATEGORY_TONE[q.category])}>
+                    <Badge
+                      variant="outline"
+                      className={cn("rounded-md", CATEGORY_TONE[q.category])}
+                    >
                       {q.category}
                     </Badge>
                     <span className="font-mono text-xs font-bold text-primary">
@@ -123,8 +119,12 @@ export default function QuestsPage() {
                     </span>
                   </div>
 
-                  <h2 className="mt-2 text-base font-bold text-foreground">{q.title}</h2>
-                  <p className="mt-1 text-[13px] text-muted-foreground">{q.desc}</p>
+                  <h2 className="mt-2 text-base font-bold text-foreground">
+                    {q.title}
+                  </h2>
+                  <p className="mt-1 text-[13px] text-muted-foreground">
+                    {q.desc}
+                  </p>
 
                   <div className="mt-3 flex items-center gap-3">
                     <div
@@ -155,12 +155,12 @@ export default function QuestsPage() {
                   ) : q.completed ? (
                     <Button
                       type="button"
-                      variant="brand"
+                      variant="outline"
                       size="sm"
-                      onClick={() => handleClaim(q.id)}
-                      disabled={isProcessing}
+                      disabled
+                      className="cursor-not-allowed opacity-75"
                     >
-                      {isProcessing ? "Minting…" : "Claim XP Reward"}
+                      Coming soon
                     </Button>
                   ) : (
                     <Button asChild variant="outline" size="sm">

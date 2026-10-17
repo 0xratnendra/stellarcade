@@ -1,5 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { useWalletStatus } from "../hooks/useWalletStatus";
+import { ApiClient, type QuestProgressDto } from "./typed-api-sdk";
+
 /**
  * Player-facing data sources that do not exist yet.
  *
@@ -77,13 +81,95 @@ export interface RewardItem {
   expiry: string;
 }
 
-interface Collection<T> {
+export interface Collection<T> {
   items: T[];
   isLoading: boolean;
 }
 
 function empty<T>(): Collection<T> {
   return { items: [], isLoading: false };
+}
+
+export interface QuestMetadata {
+  title: string;
+  category: "Daily" | "Weekly" | "Special";
+  xpReward: number;
+  total: number;
+  desc: string;
+}
+
+export const KNOWN_QUESTS: Record<string, QuestMetadata> = {
+  "daily-login": {
+    title: "Log in today",
+    category: "Daily",
+    xpReward: 50,
+    total: 1,
+    desc: "Sign in and visit the arcade to maintain your daily streak.",
+  },
+  "play-5-games": {
+    title: "Play 5 games",
+    category: "Weekly",
+    xpReward: 150,
+    total: 5,
+    desc: "Complete 5 provably fair games across coin-flip or dice arenas.",
+  },
+  "win-3-games": {
+    title: "Win 3 games",
+    category: "Weekly",
+    xpReward: 250,
+    total: 3,
+    desc: "Achieve victory in 3 rounds on StellarCade.",
+  },
+};
+
+/**
+ * Maps raw backend QuestProgressDto objects to frontend Quest records.
+ * When dtos is null/undefined or empty (e.g. no wallet connected), default
+ * catalog definitions are returned with zero progress.
+ * Rewards are never marked as claimable here because reward minting is coming soon.
+ */
+export function mapQuests(dtos?: QuestProgressDto[] | null): Quest[] {
+  if (!dtos || dtos.length === 0) {
+    return Object.entries(KNOWN_QUESTS).map(([id, meta]) => ({
+      id,
+      title: meta.title,
+      category: meta.category,
+      xpReward: meta.xpReward,
+      progress: 0,
+      total: meta.total,
+      completed: false,
+      claimed: false,
+      desc: meta.desc,
+    }));
+  }
+
+  return dtos.map((dto) => {
+    const meta = KNOWN_QUESTS[dto.questId] ?? {
+      title: dto.questId
+        .replace(/-/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase()),
+      category: "Special",
+      xpReward: 100,
+      total: dto.target || 1,
+      desc: `Complete the ${dto.questId} quest.`,
+    };
+
+    const target = dto.target > 0 ? dto.target : meta.total;
+    const progress = Math.max(0, dto.progress);
+    const completed = progress >= target;
+
+    return {
+      id: dto.questId,
+      title: meta.title,
+      category: meta.category,
+      xpReward: meta.xpReward,
+      progress,
+      total: target,
+      completed,
+      claimed: Boolean(dto.claimed),
+      desc: meta.desc,
+    };
+  });
 }
 
 /**
@@ -112,10 +198,60 @@ export function useTournaments(): Collection<Tournament> {
 
 /**
  * Quest milestones and per-player progress.
- * Blocked on: quest progress tracking; XP and Soulbound Badges are unminted.
+ * Fetches real progress from GET /api/quests?player= when a player address is available.
+ * Shows default quest catalog with 0 progress when disconnected.
  */
-export function useQuests(): Collection<Quest> {
-  return empty();
+export function useQuests(
+  playerOverride?: string | null,
+): Collection<Quest> & { error?: string } {
+  const wallet = useWalletStatus();
+  const player = playerOverride !== undefined ? playerOverride : wallet.address;
+
+  const [items, setItems] = useState<Quest[]>(() => mapQuests(null));
+  const [isLoading, setIsLoading] = useState<boolean>(Boolean(player));
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    let active = true;
+
+    if (!player) {
+      setItems(mapQuests(null));
+      setIsLoading(false);
+      setError(undefined);
+      return;
+    }
+
+    setIsLoading(true);
+    setError(undefined);
+
+    const client = new ApiClient();
+    client
+      .getQuests(player)
+      .then((result) => {
+        if (!active) return;
+        if (result.success) {
+          setItems(mapQuests(result.data));
+          setError(undefined);
+        } else {
+          setError(result.error.message || "Failed to load quests.");
+        }
+      })
+      .catch((err) => {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "Failed to load quests.");
+      })
+      .finally(() => {
+        if (active) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [player]);
+
+  return { items, isLoading, error };
 }
 
 /**
