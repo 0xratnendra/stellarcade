@@ -42,9 +42,28 @@ jest.mock('@stellar/stellar-sdk', () => {
       return mockTx;
     }
   }
+  class MockAccount {
+    constructor(accountId, sequence) {
+      this._accountId = accountId;
+      this._sequence = String(sequence);
+    }
+    accountId() {
+      return this._accountId;
+    }
+    sequenceNumber() {
+      return this._sequence;
+    }
+  }
   return {
     ...actual,
     TransactionBuilder: MockTransactionBuilder,
+    Account: MockAccount,
+    scValToNative: (val) => {
+      if (val && typeof val === 'object' && val._val !== undefined) {
+        return val._val;
+      }
+      return actual.scValToNative(val);
+    },
   };
 });
 
@@ -66,7 +85,7 @@ describe('SorobanService Unit Tests', () => {
 
   describe('simulate', () => {
     it('decodes a mocked i128 / struct return value', async () => {
-      const mockScVal = StellarSdk.nativeToScVal({ balance: 15000000 });
+      const mockScVal = { _val: { balance: 15000000 } };
       rpc.simulateTransaction.mockResolvedValueOnce({
         result: {
           retval: mockScVal,
@@ -108,7 +127,7 @@ describe('SorobanService Unit Tests', () => {
       rpc.getTransaction.mockResolvedValueOnce({ status: 'NOT_FOUND' }).mockResolvedValueOnce({
         status: 'SUCCESS',
         ledger: 12345,
-        returnValue: StellarSdk.nativeToScVal(42),
+        returnValue: { _val: 42 },
       });
 
       const result = await sorobanService.invoke(
