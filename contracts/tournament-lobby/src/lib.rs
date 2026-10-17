@@ -1,12 +1,15 @@
 #![no_std]
 
 mod storage;
-mod types;
 #[cfg(test)]
 mod test;
+mod types;
 
 use soroban_sdk::{contract, contractimpl, Address, Env, Vec};
-pub use types::{LobbyConfigSnapshot, LobbyData, Participant, ReadyCheckSummary, SeatAvailability, StartGraceConfig};
+pub use types::{
+    LobbyConfigSnapshot, LobbyData, Participant, ReadyCheckSummary, SeatAvailability,
+    StartGraceConfig,
+};
 
 #[contract]
 pub struct TournamentLobby;
@@ -76,10 +79,14 @@ impl TournamentLobby {
             panic!("Lobby already exists");
         }
 
-        storage::set_lobby(&env, lobby_id, &LobbyData {
-            max_seats,
-            participants: Vec::new(&env),
-        });
+        storage::set_lobby(
+            &env,
+            lobby_id,
+            &LobbyData {
+                max_seats,
+                participants: Vec::new(&env),
+            },
+        );
     }
 
     /// Join a lobby. Player must auth.
