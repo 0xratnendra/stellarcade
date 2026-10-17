@@ -83,23 +83,6 @@ export type GetGamesResponse = Game[];
 /** Response shape for `GET /api/games/:gameId`. */
 export type GetGameByIdResponse = Game | null;
 
-// ── POST /api/games/play ─────────────────────────────────────────────────────
-
-/** Request body for `POST /api/games/play`. Requires auth. */
-export interface PlayGameRequest {
-  /** ID of the game to play. Must be a non-empty string. */
-  gameId: string;
-  /** Optional wager amount in XLM. Must be positive if provided. */
-  wager?: number;
-}
-
-/** Response shape for `POST /api/games/play`. */
-export interface PlayGameResponse {
-  result: string;
-  payout?: number;
-  txHash?: string;
-}
-
 // ── GET /api/users/profile ───────────────────────────────────────────────────
 
 /** A user's on-chain profile. */

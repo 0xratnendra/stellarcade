@@ -2,7 +2,6 @@
  * Controller for managing all game-related API requests.
  */
 const gameService = require('../services/game.service');
-const audit = require('../services/audit.service');
 
 const getGames = async (req, res, next) => {
   try {
@@ -68,42 +67,8 @@ const getLeaderboard = async (req, res, next) => {
   }
 };
 
-const playSimpleGame = async (req, res, next) => {
-  try {
-    const { gameType, gameId, wager, amount, choice, side } = req.body;
-    const resolvedGameType = gameType || gameId || 'coin-flip';
-    const resolvedWager = wager !== undefined ? wager : amount !== undefined ? amount : 0;
-    const resolvedChoice = choice || side || 'heads';
-
-    const result = await gameService.playSimpleGame({
-      userId: req.user.id,
-      gameType: resolvedGameType,
-      wager: resolvedWager,
-      choice: resolvedChoice,
-    });
-    res.status(200).json(result);
-    audit.log({
-      actor: req.user.id,
-      action: 'game.play',
-      target: resolvedGameType,
-      payload: { gameType: resolvedGameType, wager: resolvedWager },
-      outcome: 'success',
-    });
-  } catch (error) {
-    audit.log({
-      actor: req.user?.id || 'anonymous',
-      action: 'game.play',
-      target: req.body?.gameType || req.body?.gameId || 'unknown',
-      outcome: 'failure',
-      metadata: { error: error.message },
-    });
-    next(error);
-  }
-};
-
 module.exports = {
   getGames,
   getRecentGames,
   getLeaderboard,
-  playSimpleGame,
 };

@@ -15,8 +15,6 @@ import {
   type LoginChallengeResponse,
   type LoginRequest,
   type LoginResponse,
-  type PlayGameRequest,
-  type PlayGameResponse,
   type UpdateProfileRequest,
   type UpdateProfileResponse,
   type WalletAmountRequest,
@@ -290,16 +288,6 @@ export class ApiClient {
       return { success: false, error: makeValidationError('Game id is required.') };
     }
     return this._request('GET', `/games/${encodeURIComponent(gameId)}`, undefined, false, opts);
-  }
-
-  async playGame(input: PlayGameRequest, opts?: ApiRequestOptions): Promise<ApiResult<PlayGameResponse>> {
-    if (!input.gameId.trim()) {
-      return { success: false, error: makeValidationError('Game id is required.') };
-    }
-    if (input.wager !== undefined && input.wager <= 0) {
-      return { success: false, error: makeValidationError('Wager must be greater than zero.') };
-    }
-    return this._request('POST', '/games/play', input, true, opts);
   }
 
   /**

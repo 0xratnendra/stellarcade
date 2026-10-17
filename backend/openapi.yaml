@@ -303,68 +303,6 @@
                 ],
             },
         },
-      '/api/games/play':
-        {
-          'post':
-            {
-              'operationId': 'playSimpleGame',
-              'summary': 'Play a game for the authenticated user',
-              'tags': ['Games'],
-              'responses':
-                {
-                  '200':
-                    {
-                      'description': 'Game was processed successfully',
-                      'content':
-                        {
-                          'application/json':
-                            { 'schema': { '$ref': '#/components/schemas/PlayGameResponse' } },
-                        },
-                    },
-                  '401':
-                    {
-                      'description': 'Authentication failed',
-                      'content':
-                        {
-                          'application/json':
-                            { 'schema': { '$ref': '#/components/schemas/AuthErrorResponse' } },
-                        },
-                    },
-                  '409':
-                    {
-                      'description': 'Idempotency key conflict detected',
-                      'content':
-                        {
-                          'application/json':
-                            {
-                              'schema':
-                                { '$ref': '#/components/schemas/IdempotencyConflictResponse' },
-                            },
-                        },
-                    },
-                  '500':
-                    {
-                      'description': 'Unexpected server error',
-                      'content':
-                        {
-                          'application/json':
-                            { 'schema': { '$ref': '#/components/schemas/ErrorEnvelope' } },
-                        },
-                    },
-                },
-              'parameters': [{ '$ref': '#/components/parameters/IdempotencyKeyHeader' }],
-              'requestBody':
-                {
-                  'required': true,
-                  'content':
-                    {
-                      'application/json':
-                        { 'schema': { '$ref': '#/components/schemas/PlayGameRequest' } },
-                    },
-                },
-              'security': [{ 'bearerAuth': [] }],
-            },
-        },
       '/api/users/profile':
         {
           'get':
@@ -1204,24 +1142,6 @@
                   'total': { 'type': 'integer' },
                   'totalPages': { 'type': 'integer' },
                 },
-            },
-          'PlayGameRequest':
-            {
-              'type': 'object',
-              'required': ['gameType'],
-              'properties':
-                {
-                  'gameType': { 'type': 'string' },
-                  '_amount': { 'type': 'number' },
-                  '_choice': {},
-                },
-              'additionalProperties': true,
-            },
-          'PlayGameResponse':
-            {
-              'type': 'object',
-              'required': ['success'],
-              'properties': { 'success': { 'type': 'boolean' } },
             },
           'MonetaryAmountRequest':
             {

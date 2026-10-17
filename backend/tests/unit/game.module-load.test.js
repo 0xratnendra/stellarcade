@@ -31,7 +31,7 @@ describe('Games module graph', () => {
 
     expect(typeof gameService.listGames).toBe('function');
     expect(typeof gameService.getRecentGames).toBe('function');
-    expect(typeof gameService.playSimpleGame).toBe('function');
+    expect(gameService.playSimpleGame).toBeUndefined();
   });
 
   test('games.controller loads after service', () => {
@@ -39,10 +39,10 @@ describe('Games module graph', () => {
 
     expect(typeof controller.getGames).toBe('function');
     expect(typeof controller.getRecentGames).toBe('function');
-    expect(typeof controller.playSimpleGame).toBe('function');
+    expect(controller.playSimpleGame).toBeUndefined();
   });
 
-  test('games.routes loads (controller, auth, idempotency subgraph)', () => {
+  test('games.routes loads (controller, rate-limit subgraph)', () => {
     jest.isolateModules(() => {
       expect(() => {
         require('../../src/routes/games.routes');

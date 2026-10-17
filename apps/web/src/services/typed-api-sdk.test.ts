@@ -78,20 +78,6 @@ describe('ApiClient — happy path', () => {
     }
   });
 
-  it('playGame returns play result', async () => {
-    const payload = { result: 'win', payout: 2.5, txHash: 'abc123' };
-    mockFetch(200, payload);
-
-    const client = new ApiClient({ sessionStore: makeSessionStore() });
-    const result = await client.playGame({ gameId: 'game-1' });
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.result).toBe('win');
-      expect(result.data.payout).toBe(2.5);
-    }
-  });
-
   it('getProfile returns user profile', async () => {
     const profile = { address: 'GABC123', username: 'alice', createdAt: '2024-01-01' };
     mockFetch(200, profile);
@@ -184,9 +170,9 @@ describe('ApiClient — happy path', () => {
 
 describe('ApiClient — auth propagation', () => {
   it('sends Authorization header when token is present', async () => {
-    mockFetch(200, { result: 'win' });
+    mockFetch(200, { success: true });
     const client = new ApiClient({ sessionStore: makeSessionStore('my-token') });
-    await client.playGame({ gameId: 'game-1' });
+    await client.deposit({ amount: 10 });
 
     const calledHeaders = (global.fetch as any).mock.calls[0][1]?.headers as Record<string, string>;
     expect(calledHeaders['Authorization']).toBe('Bearer my-token');
@@ -197,7 +183,7 @@ describe('ApiClient — auth propagation', () => {
     global.fetch = spy;
 
     const client = new ApiClient({ sessionStore: makeSessionStore(null) });
-    const result = await client.playGame({ gameId: 'game-1' });
+    const result = await client.deposit({ amount: 10 });
 
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -283,7 +269,7 @@ describe('ApiClient — retry logic', () => {
     mockFetch(400, { message: 'bad request' });
 
     const client = new ApiClient({ sessionStore: makeSessionStore() });
-    const result = await client.playGame({ gameId: 'x' });
+    const result = await client.deposit({ amount: 10 });
 
     expect(result.success).toBe(false);
     expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(1);
@@ -307,7 +293,7 @@ describe('ApiClient — error mapping', () => {
     mockFetch(400, { error: { message: 'invalid input', status: 400 } });
 
     const client = new ApiClient({ sessionStore: makeSessionStore() });
-    const result = await client.playGame({ gameId: 'g1' });
+    const result = await client.deposit({ amount: 10 });
 
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -503,38 +489,9 @@ describe('ApiClient — cancellation and timeout', () => {
 // ── Input validation ──────────────────────────────────────────────────────────
 
 describe('ApiClient — input validation', () => {
-  it('rejects playGame with empty gameId without calling fetch', async () => {
-    const spy = vi.fn();
-    global.fetch = spy;
-
-    const client = new ApiClient({ sessionStore: makeSessionStore() });
-    const result = await client.playGame({ gameId: '' });
-
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.code).toBe('API_VALIDATION_ERROR');
-    }
-    expect(spy).not.toHaveBeenCalled();
-  });
-
-  it('rejects playGame with whitespace-only gameId', async () => {
-    const client = new ApiClient({ sessionStore: makeSessionStore() });
-    const result = await client.playGame({ gameId: '   ' });
-
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.code).toBe('API_VALIDATION_ERROR');
-    }
-  });
-
-  it('rejects playGame with non-positive wager', async () => {
-    const client = new ApiClient({ sessionStore: makeSessionStore() });
-    const result = await client.playGame({ gameId: 'g1', wager: -5 });
-
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.code).toBe('API_VALIDATION_ERROR');
-    }
+  it('no longer exposes playGame (the off-chain /games/play simulator was removed)', () => {
+    const client = new ApiClient();
+    expect('playGame' in client).toBe(false);
   });
 
   it('rejects createProfile with empty address', async () => {
