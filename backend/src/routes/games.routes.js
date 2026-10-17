@@ -1,7 +1,5 @@
 const express = require('express');
-const { getGames, getRecentGames, playSimpleGame } = require('../controllers/games.controller');
-const auth = require('../middleware/auth.middleware');
-const idempotency = require('../middleware/idempotency.middleware');
+const { getGames, getRecentGames } = require('../controllers/games.controller');
 const { rateLimit } = require('../middleware/rate-limit.middleware');
 
 const router = express.Router();
@@ -101,60 +99,10 @@ const routeDocs = [
       },
     },
   },
-  {
-    method: 'post',
-    path: '/play',
-    operationId: 'playSimpleGame',
-    summary: 'Play a game for the authenticated user',
-    tags: ['Games'],
-    requestBody: {
-      required: true,
-      content: {
-        'application/json': {
-          schema: { $ref: '#/components/schemas/PlayGameRequest' },
-        },
-      },
-    },
-    responses: {
-      200: {
-        description: 'Game was processed successfully',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/PlayGameResponse' },
-          },
-        },
-      },
-      401: {
-        description: 'Authentication failed',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/AuthErrorResponse' },
-          },
-        },
-      },
-      409: {
-        description: 'Idempotency key conflict detected',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/IdempotencyConflictResponse' },
-          },
-        },
-      },
-      500: {
-        description: 'Unexpected server error',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/ErrorEnvelope' },
-          },
-        },
-      },
-    },
-  },
 ];
 
 router.get('/', rateLimit('games'), getGames);
 router.get('/recent', rateLimit('games'), getRecentGames);
-router.post('/play', auth, rateLimit('games'), idempotency, playSimpleGame);
 
 module.exports = router;
 module.exports.routeDocs = routeDocs;

@@ -140,255 +140,255 @@ fn test_charge_fee_game_not_found() {
     assert_eq!(result, Err(Ok(Error::GameNotFound)));
 }
 
-    #[test]
-    fn test_charge_fee_invalid_amount() {
-        let (env, contract_id, admin, _) = setup_contract();
-        let client = FeeManagerContractClient::new(&env, &contract_id);
-        let game_id = symbol_short!("game1");
-        let fee_bps = 250;
-        let recipient = Address::generate(&env);
+#[test]
+fn test_charge_fee_invalid_amount() {
+    let (env, contract_id, admin, _) = setup_contract();
+    let client = FeeManagerContractClient::new(&env, &contract_id);
+    let game_id = symbol_short!("game1");
+    let fee_bps = 250;
+    let recipient = Address::generate(&env);
 
-        // Set fee config
-        client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
+    // Set fee config
+    client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
 
-        // Invalid amount (zero)
-        let result = client.try_charge_fee(&game_id, &0i128, &None::<Address>);
-        assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+    // Invalid amount (zero)
+    let result = client.try_charge_fee(&game_id, &0i128, &None::<Address>);
+    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
 
-        // Invalid amount (negative)
-        let result = client.try_charge_fee(&game_id, &-100i128, &None::<Address>);
-        assert_eq!(result, Err(Ok(Error::InvalidAmount)));
-    }
+    // Invalid amount (negative)
+    let result = client.try_charge_fee(&game_id, &-100i128, &None::<Address>);
+    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+}
 
-    #[test]
-    fn test_charge_fee_duplicate_operation() {
-        let (env, contract_id, admin, _) = setup_contract();
-        let client = FeeManagerContractClient::new(&env, &contract_id);
-        let game_id = symbol_short!("game1");
-        let fee_bps = 250;
-        let recipient = Address::generate(&env);
-        let amount = 1000i128;
+#[test]
+fn test_charge_fee_duplicate_operation() {
+    let (env, contract_id, admin, _) = setup_contract();
+    let client = FeeManagerContractClient::new(&env, &contract_id);
+    let game_id = symbol_short!("game1");
+    let fee_bps = 250;
+    let recipient = Address::generate(&env);
+    let amount = 1000i128;
 
-        // Set fee config
-        client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
+    // Set fee config
+    client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
 
-        // First charge should succeed
-        let result1 = client.charge_fee(&game_id, &amount, &None::<Address>);
-        assert_eq!(result1, 975);
+    // First charge should succeed
+    let result1 = client.charge_fee(&game_id, &amount, &None::<Address>);
+    assert_eq!(result1, 975);
 
-        // Second charge with same parameters should fail (duplicate)
-        let result2 = client.try_charge_fee(&game_id, &amount, &None::<Address>);
-        assert_eq!(result2, Err(Ok(Error::DuplicateOperation)));
-    }
+    // Second charge with same parameters should fail (duplicate)
+    let result2 = client.try_charge_fee(&game_id, &amount, &None::<Address>);
+    assert_eq!(result2, Err(Ok(Error::DuplicateOperation)));
+}
 
-    #[test]
-    fn test_accrued_fees() {
-        let (env, contract_id, admin, _) = setup_contract();
-        let client = FeeManagerContractClient::new(&env, &contract_id);
-        let game_id = symbol_short!("game1");
-        let fee_bps = 250;
-        let recipient = Address::generate(&env);
-        let amount1 = 1000i128;
-        let amount2 = 2000i128;
+#[test]
+fn test_accrued_fees() {
+    let (env, contract_id, admin, _) = setup_contract();
+    let client = FeeManagerContractClient::new(&env, &contract_id);
+    let game_id = symbol_short!("game1");
+    let fee_bps = 250;
+    let recipient = Address::generate(&env);
+    let amount1 = 1000i128;
+    let amount2 = 2000i128;
 
-        // Set fee config
-        client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
+    // Set fee config
+    client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
 
-        // Initially no fees
-        assert_eq!(client.accrued_fees(&game_id), 0);
+    // Initially no fees
+    assert_eq!(client.accrued_fees(&game_id), 0);
 
-        // Charge fees
-        client.charge_fee(&game_id, &amount1, &None::<Address>);
-        assert_eq!(client.accrued_fees(&game_id), 25); // 2.5% of 1000
+    // Charge fees
+    client.charge_fee(&game_id, &amount1, &None::<Address>);
+    assert_eq!(client.accrued_fees(&game_id), 25); // 2.5% of 1000
 
-        client.charge_fee(&game_id, &amount2, &None::<Address>);
-        assert_eq!(client.accrued_fees(&game_id), 75); // 25 + 50
-    }
+    client.charge_fee(&game_id, &amount2, &None::<Address>);
+    assert_eq!(client.accrued_fees(&game_id), 75); // 25 + 50
+}
 
-    #[test]
-    fn test_withdraw_fees_all() {
-        let (env, contract_id, admin, _) = setup_contract();
-        let client = FeeManagerContractClient::new(&env, &contract_id);
-        let game_id = symbol_short!("game1");
-        let fee_bps = 250;
-        let recipient = Address::generate(&env);
-        let amount = 1000i128;
+#[test]
+fn test_withdraw_fees_all() {
+    let (env, contract_id, admin, _) = setup_contract();
+    let client = FeeManagerContractClient::new(&env, &contract_id);
+    let game_id = symbol_short!("game1");
+    let fee_bps = 250;
+    let recipient = Address::generate(&env);
+    let amount = 1000i128;
 
-        // Set fee config and charge fees
-        client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
-        let _result = client.charge_fee(&game_id, &amount, &None::<Address>);
+    // Set fee config and charge fees
+    client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
+    let _result = client.charge_fee(&game_id, &amount, &None::<Address>);
 
-        // Withdraw all fees
-        client.withdraw_fees(&admin, &game_id, &None::<Address>, &None::<i128>);
+    // Withdraw all fees
+    client.withdraw_fees(&admin, &game_id, &None::<Address>, &None::<i128>);
 
-        // Check no fees remaining
-        assert_eq!(client.accrued_fees(&game_id), 0);
-    }
+    // Check no fees remaining
+    assert_eq!(client.accrued_fees(&game_id), 0);
+}
 
-    #[test]
-    fn test_withdraw_fees_partial() {
-        let (env, contract_id, admin, _) = setup_contract();
-        let client = FeeManagerContractClient::new(&env, &contract_id);
-        let game_id = symbol_short!("game1");
-        let fee_bps = 250;
-        let recipient = Address::generate(&env);
-        let amount = 1000i128;
+#[test]
+fn test_withdraw_fees_partial() {
+    let (env, contract_id, admin, _) = setup_contract();
+    let client = FeeManagerContractClient::new(&env, &contract_id);
+    let game_id = symbol_short!("game1");
+    let fee_bps = 250;
+    let recipient = Address::generate(&env);
+    let amount = 1000i128;
 
-        // Set fee config and charge fees
-        client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
-        client.charge_fee(&game_id, &amount, &None::<Address>);
+    // Set fee config and charge fees
+    client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
+    client.charge_fee(&game_id, &amount, &None::<Address>);
 
-        // Withdraw partial fees
-        let withdraw_amount = 10i128;
-        assert_eq!(
-            client.try_withdraw_fees(&admin, &game_id, &None::<Address>, &Some(withdraw_amount)),
-            Ok(Ok(()))
-        );
+    // Withdraw partial fees
+    let withdraw_amount = 10i128;
+    assert_eq!(
+        client.try_withdraw_fees(&admin, &game_id, &None::<Address>, &Some(withdraw_amount)),
+        Ok(Ok(()))
+    );
 
-        // Check remaining fees
-        assert_eq!(client.accrued_fees(&game_id), 15); // 25 - 10
-    }
+    // Check remaining fees
+    assert_eq!(client.accrued_fees(&game_id), 15); // 25 - 10
+}
 
-    #[test]
-    fn test_withdraw_fees_insufficient() {
-        let (env, contract_id, admin, _) = setup_contract();
-        let client = FeeManagerContractClient::new(&env, &contract_id);
-        let game_id = symbol_short!("game1");
-        let fee_bps = 250;
-        let recipient = Address::generate(&env);
+#[test]
+fn test_withdraw_fees_insufficient() {
+    let (env, contract_id, admin, _) = setup_contract();
+    let client = FeeManagerContractClient::new(&env, &contract_id);
+    let game_id = symbol_short!("game1");
+    let fee_bps = 250;
+    let recipient = Address::generate(&env);
 
-        // Set fee config but no fees charged
-        client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
+    // Set fee config but no fees charged
+    client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
 
-        // Try to withdraw with no fees
-        assert_eq!(
-            client.try_withdraw_fees(&admin, &game_id, &None::<Address>, &None::<i128>),
-            Err(Ok(Error::InsufficientFees))
-        );
-    }
+    // Try to withdraw with no fees
+    assert_eq!(
+        client.try_withdraw_fees(&admin, &game_id, &None::<Address>, &None::<i128>),
+        Err(Ok(Error::InsufficientFees))
+    );
+}
 
-    #[test]
-    fn test_withdraw_fees_invalid_amount() {
-        let (env, contract_id, admin, _) = setup_contract();
-        let client = FeeManagerContractClient::new(&env, &contract_id);
-        let game_id = symbol_short!("game1");
-        let fee_bps = 250;
-        let recipient = Address::generate(&env);
-        let amount = 1000i128;
+#[test]
+fn test_withdraw_fees_invalid_amount() {
+    let (env, contract_id, admin, _) = setup_contract();
+    let client = FeeManagerContractClient::new(&env, &contract_id);
+    let game_id = symbol_short!("game1");
+    let fee_bps = 250;
+    let recipient = Address::generate(&env);
+    let amount = 1000i128;
 
-        // Set fee config and charge fees
-        client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
-        client.charge_fee(&game_id, &amount, &None::<Address>);
+    // Set fee config and charge fees
+    client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
+    client.charge_fee(&game_id, &amount, &None::<Address>);
 
-        // Try to withdraw more than available
-        assert_eq!(
-            client.try_withdraw_fees(&admin, &game_id, &None::<Address>, &Some(100i128)),
-            Err(Ok(Error::InvalidAmount))
-        );
+    // Try to withdraw more than available
+    assert_eq!(
+        client.try_withdraw_fees(&admin, &game_id, &None::<Address>, &Some(100i128)),
+        Err(Ok(Error::InvalidAmount))
+    );
 
-        // Try to withdraw zero
-        assert_eq!(
-            client.try_withdraw_fees(&admin, &game_id, &None::<Address>, &Some(0i128)),
-            Err(Ok(Error::InvalidAmount))
-        );
-    }
+    // Try to withdraw zero
+    assert_eq!(
+        client.try_withdraw_fees(&admin, &game_id, &None::<Address>, &Some(0i128)),
+        Err(Ok(Error::InvalidAmount))
+    );
+}
 
-    #[test]
-    fn test_withdraw_fees_custom_recipient() {
-        let (env, contract_id, admin, _) = setup_contract();
-        let client = FeeManagerContractClient::new(&env, &contract_id);
-        let game_id = symbol_short!("game1");
-        let fee_bps = 250;
-        let recipient = Address::generate(&env);
-        let custom_recipient = Address::generate(&env);
-        let amount = 1000i128;
+#[test]
+fn test_withdraw_fees_custom_recipient() {
+    let (env, contract_id, admin, _) = setup_contract();
+    let client = FeeManagerContractClient::new(&env, &contract_id);
+    let game_id = symbol_short!("game1");
+    let fee_bps = 250;
+    let recipient = Address::generate(&env);
+    let custom_recipient = Address::generate(&env);
+    let amount = 1000i128;
 
-        // Set fee config and charge fees
-        client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
-        client.charge_fee(&game_id, &amount, &None::<Address>);
+    // Set fee config and charge fees
+    client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
+    client.charge_fee(&game_id, &amount, &None::<Address>);
 
-        // Withdraw to custom recipient
-        assert_eq!(
-            client.try_withdraw_fees(
-                &admin,
-                &game_id,
-                &Some(custom_recipient.clone()),
-                &None::<i128>
-            ),
-            Ok(Ok(()))
-        );
-    }
+    // Withdraw to custom recipient
+    assert_eq!(
+        client.try_withdraw_fees(
+            &admin,
+            &game_id,
+            &Some(custom_recipient.clone()),
+            &None::<i128>
+        ),
+        Ok(Ok(()))
+    );
+}
 
-    #[test]
-    fn test_pause_unpause() {
-        let (env, contract_id, admin, _) = setup_contract();
-        let client = FeeManagerContractClient::new(&env, &contract_id);
+#[test]
+fn test_pause_unpause() {
+    let (env, contract_id, admin, _) = setup_contract();
+    let client = FeeManagerContractClient::new(&env, &contract_id);
 
-        // Pause contract
-        client.pause(&admin);
+    // Pause contract
+    client.pause(&admin);
 
-        // Try to charge fee while paused
-        let game_id = symbol_short!("game1");
-        let fee_bps = 250;
-        let recipient = Address::generate(&env);
-        client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
+    // Try to charge fee while paused
+    let game_id = symbol_short!("game1");
+    let fee_bps = 250;
+    let recipient = Address::generate(&env);
+    client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
 
-        let result = client.try_charge_fee(&game_id, &1000i128, &None::<Address>);
-        assert_eq!(result, Err(Ok(Error::ContractPaused)));
+    let result = client.try_charge_fee(&game_id, &1000i128, &None::<Address>);
+    assert_eq!(result, Err(Ok(Error::ContractPaused)));
 
-        // Unpause contract
-        client.unpause(&admin);
+    // Unpause contract
+    client.unpause(&admin);
 
-        // Now charging should work
-        let result = client.charge_fee(&game_id, &1000i128, &None::<Address>);
-        assert_eq!(result, 975);
-    }
+    // Now charging should work
+    let result = client.charge_fee(&game_id, &1000i128, &None::<Address>);
+    assert_eq!(result, 975);
+}
 
-    #[test]
-    fn test_pause_unpause_unauthorized() {
-        let (env, contract_id, _, _) = setup_contract();
-        let client = FeeManagerContractClient::new(&env, &contract_id);
-        let unauthorized = Address::generate(&env);
+#[test]
+fn test_pause_unpause_unauthorized() {
+    let (env, contract_id, _, _) = setup_contract();
+    let client = FeeManagerContractClient::new(&env, &contract_id);
+    let unauthorized = Address::generate(&env);
 
-        // Try to pause with unauthorized caller
-        assert_eq!(
-            client.try_pause(&unauthorized),
-            Err(Ok(Error::NotAuthorized))
-        );
+    // Try to pause with unauthorized caller
+    assert_eq!(
+        client.try_pause(&unauthorized),
+        Err(Ok(Error::NotAuthorized))
+    );
 
-        // Pause with admin
-        let admin: Address = env.as_contract(&contract_id, || {
-            env.storage().instance().get(&DataKey::Admin).unwrap()
-        });
-        client.pause(&admin);
+    // Pause with admin
+    let admin: Address = env.as_contract(&contract_id, || {
+        env.storage().instance().get(&DataKey::Admin).unwrap()
+    });
+    client.pause(&admin);
 
-        // Try to unpause with unauthorized caller
-        assert_eq!(
-            client.try_unpause(&unauthorized),
-            Err(Ok(Error::NotAuthorized))
-        );
-    }
+    // Try to unpause with unauthorized caller
+    assert_eq!(
+        client.try_unpause(&unauthorized),
+        Err(Ok(Error::NotAuthorized))
+    );
+}
 
-    #[test]
-    fn test_pause_already_paused() {
-        let (env, contract_id, admin, _) = setup_contract();
-        let client = FeeManagerContractClient::new(&env, &contract_id);
+#[test]
+fn test_pause_already_paused() {
+    let (env, contract_id, admin, _) = setup_contract();
+    let client = FeeManagerContractClient::new(&env, &contract_id);
 
-        // Pause contract
-        client.pause(&admin);
+    // Pause contract
+    client.pause(&admin);
 
-        // Try to pause again
-        assert_eq!(client.try_pause(&admin), Err(Ok(Error::AlreadyPaused)));
-    }
+    // Try to pause again
+    assert_eq!(client.try_pause(&admin), Err(Ok(Error::AlreadyPaused)));
+}
 
-    #[test]
-    fn test_unpause_not_paused() {
-        let (env, contract_id, admin, _) = setup_contract();
-        let client = FeeManagerContractClient::new(&env, &contract_id);
+#[test]
+fn test_unpause_not_paused() {
+    let (env, contract_id, admin, _) = setup_contract();
+    let client = FeeManagerContractClient::new(&env, &contract_id);
 
-        // Try to unpause when not paused
-        assert_eq!(client.try_unpause(&admin), Err(Ok(Error::NotPaused)));
-    }
+    // Try to unpause when not paused
+    assert_eq!(client.try_unpause(&admin), Err(Ok(Error::NotPaused)));
+}
 
 #[test]
 fn test_not_initialized() {
@@ -414,7 +414,10 @@ fn test_not_initialized() {
         client.try_charge_fee(&game_id, &1000i128, &None::<Address>),
         Err(Ok(Error::NotInitialized))
     );
-    assert_eq!(client.try_accrued_fees(&game_id), Err(Ok(Error::NotInitialized)));
+    assert_eq!(
+        client.try_accrued_fees(&game_id),
+        Err(Ok(Error::NotInitialized))
+    );
     assert_eq!(
         client.try_withdraw_fees(
             &Address::generate(&env),
@@ -434,59 +437,59 @@ fn test_not_initialized() {
     );
 }
 
-    #[test]
-    fn test_overflow_protection() {
-        let (env, contract_id, admin, _) = setup_contract();
-        let client = FeeManagerContractClient::new(&env, &contract_id);
-        let game_id = symbol_short!("game1");
-        let fee_bps = 250;
-        let recipient = Address::generate(&env);
+#[test]
+fn test_overflow_protection() {
+    let (env, contract_id, admin, _) = setup_contract();
+    let client = FeeManagerContractClient::new(&env, &contract_id);
+    let game_id = symbol_short!("game1");
+    let fee_bps = 250;
+    let recipient = Address::generate(&env);
 
-        // Set fee config
-        client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
+    // Set fee config
+    client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
 
-        // Try with maximum amount that might cause overflow
-        let max_amount = i128::MAX;
-        let result = client.try_charge_fee(&game_id, &max_amount, &None::<Address>);
-        // This should either succeed or fail with Overflow error, not panic
-        assert!(matches!(result, Ok(Ok(_)) | Err(Ok(Error::Overflow))));
-    }
+    // Try with maximum amount that might cause overflow
+    let max_amount = i128::MAX;
+    let result = client.try_charge_fee(&game_id, &max_amount, &None::<Address>);
+    // This should either succeed or fail with Overflow error, not panic
+    assert!(matches!(result, Ok(Ok(_)) | Err(Ok(Error::Overflow))));
+}
 
-    #[test]
-    fn test_zero_fee_config() {
-        let (env, contract_id, admin, _) = setup_contract();
-        let client = FeeManagerContractClient::new(&env, &contract_id);
-        let game_id = symbol_short!("game1");
-        let fee_bps = 0; // No fee
-        let recipient = Address::generate(&env);
-        let amount = 1000i128;
+#[test]
+fn test_zero_fee_config() {
+    let (env, contract_id, admin, _) = setup_contract();
+    let client = FeeManagerContractClient::new(&env, &contract_id);
+    let game_id = symbol_short!("game1");
+    let fee_bps = 0; // No fee
+    let recipient = Address::generate(&env);
+    let amount = 1000i128;
 
-        // Set zero fee config
-        client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
+    // Set zero fee config
+    client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
 
-        // Charge fee - should return full amount
-        let result = client.charge_fee(&game_id, &amount, &None::<Address>);
-        assert_eq!(result, 1000);
+    // Charge fee - should return full amount
+    let result = client.charge_fee(&game_id, &amount, &None::<Address>);
+    assert_eq!(result, 1000);
 
-        // No fees should be accrued
-        assert_eq!(client.accrued_fees(&game_id), 0);
-    }
+    // No fees should be accrued
+    assert_eq!(client.accrued_fees(&game_id), 0);
+}
 
-    #[test]
-    fn test_maximum_fee_config() {
-        let (env, contract_id, admin, _) = setup_contract();
-        let client = FeeManagerContractClient::new(&env, &contract_id);
-        let game_id = symbol_short!("game1");
-        let fee_bps = BASIS_POINTS_DIVISOR; // 100% fee
-        let recipient = Address::generate(&env);
-        let amount = 1000i128;
+#[test]
+fn test_maximum_fee_config() {
+    let (env, contract_id, admin, _) = setup_contract();
+    let client = FeeManagerContractClient::new(&env, &contract_id);
+    let game_id = symbol_short!("game1");
+    let fee_bps = BASIS_POINTS_DIVISOR; // 100% fee
+    let recipient = Address::generate(&env);
+    let amount = 1000i128;
 
-        // Set maximum fee config
-        client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
+    // Set maximum fee config
+    client.set_fee_config(&admin, &game_id, &fee_bps, &recipient);
 
-        // Charge fee - should return zero amount (full fee)
-        let result = client.charge_fee(&game_id, &amount, &None::<Address>);
-        assert_eq!(result, 0);
+    // Charge fee - should return zero amount (full fee)
+    let result = client.charge_fee(&game_id, &amount, &None::<Address>);
+    assert_eq!(result, 0);
 
     // Full amount should be accrued as fees
     assert_eq!(client.accrued_fees(&game_id), 1000);

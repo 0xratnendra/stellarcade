@@ -7,8 +7,8 @@
 #![allow(unexpected_cfgs)]
 
 use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, contracttype, token::TokenClient,
-    Address, Env, Symbol, Vec, vec,
+    contract, contracterror, contractevent, contractimpl, contracttype, token::TokenClient, vec,
+    Address, Env, Symbol, Vec,
 };
 
 use shared::{calculate_fee, BASIS_POINTS_DIVISOR};
@@ -517,7 +517,11 @@ impl FeeManagerContract {
 
     /// Get route allocation snapshot for a game
     pub fn route_allocation_snapshot(env: Env, game_id: Symbol) -> RouteAllocationSnapshot {
-        match env.storage().instance().get::<_, FeeConfig>(&DataKey::FeeConfig(game_id.clone())) {
+        match env
+            .storage()
+            .instance()
+            .get::<_, FeeConfig>(&DataKey::FeeConfig(game_id.clone()))
+        {
             Some(config) => {
                 let accrued = env
                     .storage()
@@ -529,11 +533,14 @@ impl FeeManagerContract {
                     game_id,
                     exists: true,
                     total_allocated: accrued,
-                    routes: vec![&env, RouteAllocation {
-                        recipient: config.recipient,
-                        percentage: 10000, // 100% in basis points
-                        amount: accrued,
-                    }],
+                    routes: vec![
+                        &env,
+                        RouteAllocation {
+                            recipient: config.recipient,
+                            percentage: 10000, // 100% in basis points
+                            amount: accrued,
+                        },
+                    ],
                 }
             }
             None => RouteAllocationSnapshot {
@@ -547,7 +554,11 @@ impl FeeManagerContract {
 
     /// Get fallback policy for a game
     pub fn fallback_policy(env: Env, game_id: Symbol) -> FallbackPolicy {
-        match env.storage().instance().get::<_, FeeConfig>(&DataKey::FeeConfig(game_id.clone())) {
+        match env
+            .storage()
+            .instance()
+            .get::<_, FeeConfig>(&DataKey::FeeConfig(game_id.clone()))
+        {
             Some(config) => FallbackPolicy {
                 game_id,
                 exists: true,
@@ -562,7 +573,6 @@ impl FeeManagerContract {
             },
         }
     }
-
 }
 
 #[cfg(test)]

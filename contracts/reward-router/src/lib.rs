@@ -1,12 +1,12 @@
 #![no_std]
 
 mod storage;
-mod types;
 #[cfg(test)]
 mod test;
+mod types;
 
 use soroban_sdk::{contract, contractimpl, Address, Env, Symbol};
-pub use types::{RouteImbalanceSummary, FallbackBucket, RouteData, RoutingStateSnapshot};
+pub use types::{FallbackBucket, RouteData, RouteImbalanceSummary, RoutingStateSnapshot};
 
 #[contract]
 pub struct RewardRouter;
@@ -30,7 +30,7 @@ impl RewardRouter {
         });
 
         let imbalance = route.allocated - route.routed;
-        
+
         RouteImbalanceSummary {
             route_id,
             total_allocated: route.allocated,
@@ -58,11 +58,14 @@ impl RewardRouter {
             last_fallback_ledger: 0,
         });
 
-        storage::set_fallback(&env, &FallbackBucket {
-            bucket_address,
-            total_collected: current.total_collected,
-            last_fallback_ledger: env.ledger().sequence(),
-        });
+        storage::set_fallback(
+            &env,
+            &FallbackBucket {
+                bucket_address,
+                total_collected: current.total_collected,
+                last_fallback_ledger: env.ledger().sequence(),
+            },
+        );
     }
 
     /// Add or update a route's allocation. Admin only.

@@ -408,7 +408,10 @@ impl ContractAddressRegistry {
                     issues.push_back(RegistryIssue {
                         contract_name: name.clone(),
                         issue_type: IssueType::Placeholder,
-                        details: String::from_str(&env, "Contract address is a zero-address placeholder"),
+                        details: String::from_str(
+                            &env,
+                            "Contract address is a zero-address placeholder",
+                        ),
                     });
                 }
 
@@ -419,7 +422,10 @@ impl ContractAddressRegistry {
                         issues.push_back(RegistryIssue {
                             contract_name: name.clone(),
                             issue_type: IssueType::Duplicate,
-                            details: String::from_str(&env, "Shares address with another registered contract"),
+                            details: String::from_str(
+                                &env,
+                                "Shares address with another registered contract",
+                            ),
                         });
                         break;
                     }
@@ -439,7 +445,10 @@ impl ContractAddressRegistry {
     /// Placeholder is defined as the Stellar zero-address strkey:
     /// CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM
     fn is_placeholder(env: &Env, address: &Address) -> bool {
-        let zero_strkey = String::from_str(env, "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM");
+        let zero_strkey = String::from_str(
+            env,
+            "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+        );
         let placeholder_addr = Address::from_string(&zero_strkey);
         address == &placeholder_addr
     }
@@ -645,7 +654,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, ContractAddressRegistry);
+        let contract_id = env.register(ContractAddressRegistry, ());
         let client = ContractAddressRegistryClient::new(&env, &contract_id);
 
         let admin = Address::generate(&env);
@@ -1060,7 +1069,7 @@ mod test {
         let report = client.validation_report();
         // Should flag 2 missing (rng, coin-flip) + 1 duplicate
         assert_eq!(report.issues.len(), 3);
-        
+
         let mut found_duplicate = false;
         for issue in report.issues.iter() {
             if issue.issue_type == IssueType::Duplicate {
@@ -1076,13 +1085,19 @@ mod test {
         let (env, client, admin, _) = setup_test();
         init_registry(&client, &admin);
 
-        let zero_strkey = String::from_str(&env, "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM");
+        let zero_strkey = String::from_str(
+            &env,
+            "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+        );
         let placeholder_addr = Address::from_string(&zero_strkey);
 
         client.register(&String::from_str(&env, "prize-pool"), &placeholder_addr, &1);
 
         let report = client.validation_report();
         // Should flag 2 missing + 1 placeholder
-        assert!(report.issues.iter().any(|i| i.issue_type == IssueType::Placeholder));
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.issue_type == IssueType::Placeholder));
     }
 }

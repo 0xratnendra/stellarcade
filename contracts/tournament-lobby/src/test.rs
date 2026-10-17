@@ -1,14 +1,15 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::testutils::{Address as _};
-use soroban_sdk::{Env};
+use soroban_sdk::testutils::Address as _;
+use soroban_sdk::Env;
 
 #[test]
 fn test_ready_check_summary() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
-    let contract_id = env.register_contract(None, TournamentLobby);
+    let contract_id = env.register(TournamentLobby, ());
     let client = TournamentLobbyClient::new(&env, &contract_id);
 
     client.init(&admin);
@@ -50,7 +51,7 @@ fn test_lobby_config_snapshot_missing() {
     let env = Env::default();
     env.mock_all_auths();
     let admin = Address::generate(&env);
-    let contract_id = env.register_contract(None, TournamentLobby);
+    let contract_id = env.register(TournamentLobby, ());
     let client = TournamentLobbyClient::new(&env, &contract_id);
     client.init(&admin);
 
@@ -67,7 +68,7 @@ fn test_lobby_config_snapshot_with_participants() {
     let env = Env::default();
     env.mock_all_auths();
     let admin = Address::generate(&env);
-    let contract_id = env.register_contract(None, TournamentLobby);
+    let contract_id = env.register(TournamentLobby, ());
     let client = TournamentLobbyClient::new(&env, &contract_id);
     client.init(&admin);
 
@@ -92,7 +93,7 @@ fn test_start_grace_config_default() {
     let env = Env::default();
     env.mock_all_auths();
     let admin = Address::generate(&env);
-    let contract_id = env.register_contract(None, TournamentLobby);
+    let contract_id = env.register(TournamentLobby, ());
     let client = TournamentLobbyClient::new(&env, &contract_id);
     client.init(&admin);
 
@@ -106,7 +107,7 @@ fn test_start_grace_config_after_set() {
     let env = Env::default();
     env.mock_all_auths();
     let admin = Address::generate(&env);
-    let contract_id = env.register_contract(None, TournamentLobby);
+    let contract_id = env.register(TournamentLobby, ());
     let client = TournamentLobbyClient::new(&env, &contract_id);
     client.init(&admin);
 
@@ -122,8 +123,9 @@ fn test_start_grace_config_after_set() {
 #[test]
 fn test_seat_availability() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
-    let contract_id = env.register_contract(None, TournamentLobby);
+    let contract_id = env.register(TournamentLobby, ());
     let client = TournamentLobbyClient::new(&env, &contract_id);
 
     client.init(&admin);

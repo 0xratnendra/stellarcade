@@ -93,9 +93,14 @@ const GameModel = {
       const safeSortBy = allowedSortColumns.includes(sortBy) ? sortBy : 'created_at';
       const safeSortDir = String(sortDir).toLowerCase() === 'asc' ? 'asc' : 'desc';
 
+      // Left join: indexed on-chain games from wallets without an account
+      // have no user row, and fall back to the on-chain player address.
       const query = db('games')
-        .select('games.*', 'users.wallet_address as user_wallet')
-        .join('users', 'games.user_id', 'users.id');
+        .select(
+          'games.*',
+          db.raw('COALESCE(users.wallet_address, games.player_address) as user_wallet')
+        )
+        .leftJoin('users', 'games.user_id', 'users.id');
 
       if (gameType) {
         query.where('game_type', gameType);
@@ -150,6 +155,66 @@ const GameModel = {
       return await query;
     } catch (error) {
       logger.error('Error in GameModel.getLeaderboard:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Finds an indexed on-chain game by its contract and on-chain game id.
+   *
+   * @param {string} contractId
+   * @param {string} chainGameId - u64 as a decimal string
+   * @returns {Promise<Object|null>}
+   */
+  async findByChainGame(contractId, chainGameId) {
+    try {
+      const game = await db('games')
+        .where({ contract_id: contractId, chain_game_id: chainGameId })
+        .first();
+      return game || null;
+    } catch (error) {
+      logger.error('Error in GameModel.findByChainGame:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Inserts an indexed on-chain game unless (contract_id, chain_game_id)
+   * already exists, so replaying the same BetPlaced event changes nothing.
+   *
+   * @param {Object} gameData - Must include contract_id and chain_game_id
+   * @returns {Promise<boolean>} true if a row was inserted
+   */
+  async insertChainGame(gameData) {
+    try {
+      const existing = await this.findByChainGame(gameData.contract_id, gameData.chain_game_id);
+      if (existing) return false;
+      await db('games').insert(gameData).onConflict(['contract_id', 'chain_game_id']).ignore();
+      return true;
+    } catch (error) {
+      logger.error('Error in GameModel.insertChainGame:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Moves a pending indexed game to resolved. Only a pending row is updated,
+   * so the transition happens once no matter how often the event is replayed.
+   *
+   * @param {string} contractId
+   * @param {string} chainGameId
+   * @param {Object} patch - result, payout, resolve_tx_hash, resolved_at, user_id
+   * @returns {Promise<Object|null>} the resolved row, or null if no pending row existed
+   */
+  async resolveChainGame(contractId, chainGameId, patch) {
+    try {
+      const updated = await db('games')
+        .where({ contract_id: contractId, chain_game_id: chainGameId, status: 'pending' })
+        .update({ ...patch, status: 'resolved' });
+      if (!updated) return null;
+      return await this.findByChainGame(contractId, chainGameId);
+    } catch (error) {
+      logger.error('Error in GameModel.resolveChainGame:', error);
       throw error;
     }
   },

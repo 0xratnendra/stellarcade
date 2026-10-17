@@ -203,16 +203,20 @@ const invoke = async (contractId, method, args = [], signer, opts = {}) => {
  */
 const getEvents = async (params = {}) => {
   try {
-    const request = {};
-    if (params.contractIds) request.contractIds = params.contractIds;
-    if (params.topics) request.topics = params.topics;
-    if (params.startLedger) request.startLedger = params.startLedger;
+    // rpc.Server#getEvents (stellar-sdk v14) takes contract/topic filters
+    // inside a `filters` array, and rejects startLedger alongside a cursor.
+    const filter = { type: 'contract' };
+    if (params.contractIds) filter.contractIds = params.contractIds;
+    if (params.topics) filter.topics = params.topics;
+    const request = { filters: [filter] };
+    if (params.startLedger && !params.cursor) request.startLedger = params.startLedger;
     if (params.cursor) request.cursor = params.cursor;
     if (params.limit) request.limit = params.limit;
 
     const res = await rpc.getEvents(request);
     return {
       events: res.events || [],
+      latestLedger: res.latestLedger,
       cursor:
         res.cursor ||
         (res.events && res.events.length > 0
@@ -228,8 +232,27 @@ const getEvents = async (params = {}) => {
   }
 };
 
+/**
+ * Fetch the sequence number of the latest ledger known to the RPC server.
+ *
+ * @returns {Promise<number>}
+ */
+const getLatestLedger = async () => {
+  try {
+    const res = await rpc.getLatestLedger();
+    return res.sequence;
+  } catch (err) {
+    logger.error('Soroban getLatestLedger failed:', err.message);
+    throw new SorobanRpcError(`Failed to fetch latest ledger: ${err.message}`, {
+      code: STELLAR_ERRORS.NETWORK_ERROR,
+      details: err,
+    });
+  }
+};
+
 module.exports = {
   simulate,
+  getLatestLedger,
   invoke,
   getEvents,
   SorobanRpcError,

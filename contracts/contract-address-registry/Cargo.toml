@@ -2,16 +2,13 @@
 name = "stellarcade-contract-address-registry"
 version = "0.1.0"
 edition = "2021"
-authors = ["Stellarcade Team"]
-license = "MIT"
-description = "Contract Address Registry for Stellarcade platform"
-
-[lib]
-crate-type = ["cdylib"]
+publish = false
 
 [dependencies]
-soroban-sdk = "21.7.1"
+soroban-sdk = "25.0.2"
 
 [dev-dependencies]
-soroban-sdk = { version = "21.7.1", features = ["testutils"] }
+soroban-sdk = { version = "25.0.2", features = ["testutils"] }
 
+[lib]
+crate-type = ["cdylib", "rlib"]

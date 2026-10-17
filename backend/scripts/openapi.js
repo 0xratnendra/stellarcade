@@ -154,23 +154,6 @@ const components = {
         totalPages: { type: 'integer' },
       },
     },
-    PlayGameRequest: {
-      type: 'object',
-      required: ['gameType'],
-      properties: {
-        gameType: { type: 'string' },
-        _amount: { type: 'number' },
-        _choice: {},
-      },
-      additionalProperties: true,
-    },
-    PlayGameResponse: {
-      type: 'object',
-      required: ['success'],
-      properties: {
-        success: { type: 'boolean' },
-      },
-    },
     MonetaryAmountRequest: {
       type: 'object',
       required: ['amount'],
@@ -482,12 +465,7 @@ function validateSpecShape(spec) {
     throw new Error(`Expected OpenAPI version 3.0.3, received ${spec.openapi}`);
   }
 
-  const protectedRoutes = [
-    '/api/games/play',
-    '/api/users/audit-logs',
-    '/api/wallet/deposit',
-    '/api/wallet/withdraw',
-  ];
+  const protectedRoutes = ['/api/users/audit-logs', '/api/wallet/deposit', '/api/wallet/withdraw'];
 
   for (const routePath of protectedRoutes) {
     const operations = spec.paths[routePath];

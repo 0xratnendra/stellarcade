@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::testutils::{Address as _};
+use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::{Env, Symbol};
 
 #[test]
@@ -9,13 +9,13 @@ fn test_route_imbalance_summary() {
     let env = Env::default();
     env.mock_all_auths();
     let admin = Address::generate(&env);
-    let contract_id = env.register_contract(None, RewardRouter);
+    let contract_id = env.register(RewardRouter, ());
     let client = RewardRouterClient::new(&env, &contract_id);
 
     client.init(&admin);
 
     let route_id = Symbol::new(&env, "test_route");
-    
+
     // Test empty state
     let summary = client.route_imbalance_summary(&route_id);
     assert_eq!(summary.total_allocated, 0);
@@ -25,7 +25,7 @@ fn test_route_imbalance_summary() {
 
     // Update route
     client.update_route(&admin, &route_id, &1000);
-    
+
     let summary = client.route_imbalance_summary(&route_id);
     assert_eq!(summary.total_allocated, 1000);
     assert_eq!(summary.total_routed, 0);
@@ -34,7 +34,7 @@ fn test_route_imbalance_summary() {
 
     // Route some reward
     client.route_reward(&route_id, &400);
-    
+
     let summary = client.route_imbalance_summary(&route_id);
     assert_eq!(summary.total_allocated, 1000);
     assert_eq!(summary.total_routed, 400);
@@ -53,7 +53,7 @@ fn test_fallback_bucket() {
     let env = Env::default();
     env.mock_all_auths();
     let admin = Address::generate(&env);
-    let contract_id = env.register_contract(None, RewardRouter);
+    let contract_id = env.register(RewardRouter, ());
     let client = RewardRouterClient::new(&env, &contract_id);
 
     client.init(&admin);
@@ -68,13 +68,17 @@ fn test_fallback_bucket() {
     assert_eq!(fallback.bucket_address, bucket_addr);
     assert_eq!(fallback.total_collected, 0);
 
-    // Route to missing route (should go to fallback)
+    // Route to missing route (should go to fallback). The default test
+    // ledger starts at sequence 0, so advance it to prove the fallback
+    // records the ledger it was hit on.
+    env.ledger().set_sequence_number(42);
     let missing_route = Symbol::new(&env, "missing");
     client.route_reward(&missing_route, &500);
 
     let fallback = client.fallback_bucket().unwrap();
     assert_eq!(fallback.total_collected, 500);
     assert!(fallback.last_fallback_ledger > 0);
+    assert_eq!(fallback.last_fallback_ledger, 42);
 }
 
 #[test]
@@ -82,7 +86,7 @@ fn test_routing_state_snapshot_empty() {
     let env = Env::default();
     env.mock_all_auths();
     let admin = Address::generate(&env);
-    let contract_id = env.register_contract(None, RewardRouter);
+    let contract_id = env.register(RewardRouter, ());
     let client = RewardRouterClient::new(&env, &contract_id);
     client.init(&admin);
 
@@ -100,7 +104,7 @@ fn test_routing_state_snapshot_with_routes() {
     let env = Env::default();
     env.mock_all_auths();
     let admin = Address::generate(&env);
-    let contract_id = env.register_contract(None, RewardRouter);
+    let contract_id = env.register(RewardRouter, ());
     let client = RewardRouterClient::new(&env, &contract_id);
     client.init(&admin);
 
@@ -124,7 +128,7 @@ fn test_split_ratio_empty_route() {
     let env = Env::default();
     env.mock_all_auths();
     let admin = Address::generate(&env);
-    let contract_id = env.register_contract(None, RewardRouter);
+    let contract_id = env.register(RewardRouter, ());
     let client = RewardRouterClient::new(&env, &contract_id);
     client.init(&admin);
 
@@ -137,7 +141,7 @@ fn test_split_ratio_partial_routing() {
     let env = Env::default();
     env.mock_all_auths();
     let admin = Address::generate(&env);
-    let contract_id = env.register_contract(None, RewardRouter);
+    let contract_id = env.register(RewardRouter, ());
     let client = RewardRouterClient::new(&env, &contract_id);
     client.init(&admin);
 
