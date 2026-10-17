@@ -5,7 +5,7 @@ Snapshot of the house's current exposure across all unresolved games.  `max_payo
 ## Public Methods
 
 ### `init`
-Initialize the coin flip game.  `house_edge_bps`: house edge in basis points (e.g., 250 = 2.5%).
+Initialize the coin flip game.  `house_edge_bps`: house edge in basis points (e.g., 250 = 2.5%). The refund timeout for `cancel_stale_bet` is set to `DEFAULT_REFUND_TIMEOUT_LEDGERS`.
 
 ```rust
 pub fn init(env: Env, admin: Address, rng_contract: Address, token: Address, min_wager: i128, max_wager: i128, house_edge_bps: i128) -> Result<(), Error>
@@ -66,6 +66,25 @@ pub fn resolve_bet(env: Env, game_id: u64) -> Result<(), Error>
 
 `Result<(), Error>`
 
+### `cancel_stale_bet`
+Cancel a bet whose randomness was never fulfilled and refund the full wager to the player.  Only the game's player may call this, and only once `RefundTimeoutLedgers` ledgers have passed since `placed_at_ledger` while the RNG request is still unfulfilled. If the RNG result is already available the call fails with `RefundNotYetAvailable`; the game must be settled with `resolve_bet` instead.
+
+```rust
+pub fn cancel_stale_bet(env: Env, player: Address, game_id: u64) -> Result<(), Error>
+```
+
+#### Parameters
+
+| Name | Type |
+|------|------|
+| `env` | `Env` |
+| `player` | `Address` |
+| `game_id` | `u64` |
+
+#### Return Type
+
+`Result<(), Error>`
+
 ### `get_game`
 View a game's state.
 
@@ -105,7 +124,7 @@ pub fn get_recent_games(env: Env, player: Address, start: u32, limit: u32) -> Re
 `Result<PlayerGameHistoryPage, Error>`
 
 ### `house_exposure_snapshot`
-Return the current house exposure across all unresolved games.  The snapshot is derived entirely from aggregate counters updated by `place_bet` and `resolve_bet`, so it requires no off-chain scanning. `max_payout_liability` reflects the worst-case payout if every active game is won by the player (after applying the configured house edge). Returns zeroed fields when no games are currently active.
+Return the current house exposure across all unresolved games.  The snapshot is derived entirely from aggregate counters updated by `place_bet`, `resolve_bet` and `cancel_stale_bet`, so it requires no off-chain scanning. `max_payout_liability` reflects the worst-case payout if every active game is won by the player (after applying the configured house edge). Returns zeroed fields when no games are currently active.
 
 ```rust
 pub fn house_exposure_snapshot(env: Env) -> Result<HouseExposureSnapshot, Error>

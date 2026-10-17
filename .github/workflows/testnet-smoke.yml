@@ -1,0 +1,54 @@
+name: Testnet Smoke (coin flip)
+
+# Plays one real coin-flip round against the live testnet deployment. Not run
+# on pull requests: it depends on testnet, Friendbot and the deployed oracle
+# worker, so it runs nightly and on demand.
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: "Backend API base URL (…/api) to check GET /games/recent against"
+        required: false
+        default: "https://stellarcade-backend.onrender.com/api"
+      timeout:
+        description: "Seconds to wait for the oracle to resolve the bet"
+        required: false
+        default: "180"
+  schedule:
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  coin-flip-round:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      # The script resolves @stellar/stellar-sdk from apps/web.
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile --filter @stellarcade/web
+
+      # No secrets: the script creates and Friendbot-funds its own throwaway player.
+      - name: Play one coin-flip round
+        env:
+          SMOKE_API_URL: ${{ inputs.api_url || 'https://stellarcade-backend.onrender.com/api' }}
+          SMOKE_TIMEOUT: ${{ inputs.timeout || '180' }}
+        run: |
+          node scripts/smoke/coin-flip-round.mjs \
+            --deployment deployments/testnet.json \
+            --api-url "$SMOKE_API_URL" \
+            --timeout "$SMOKE_TIMEOUT"
