@@ -18,7 +18,7 @@ const TransactionModel = require('../../src/models/Transaction.model');
 const createGameRecentBuilder = ({ items = [], total = 0 } = {}) => {
   const builder = {};
   builder.select = jest.fn().mockReturnValue(builder);
-  builder.join = jest.fn().mockReturnValue(builder);
+  builder.leftJoin = jest.fn().mockReturnValue(builder);
   builder.where = jest.fn().mockReturnValue(builder);
   builder.clone = jest.fn();
   builder.clearSelect = jest.fn().mockReturnValue(builder);
@@ -119,6 +119,8 @@ describe('Model operations', () => {
         page: 2,
         pageSize: 2,
       });
+      // Left join keeps indexed games from wallets with no user account.
+      expect(builder.leftJoin).toHaveBeenCalledWith('users', 'games.user_id', 'users.id');
       expect(builder.orderBy).toHaveBeenCalledWith('bet_amount', 'asc');
       expect(builder.limit).toHaveBeenCalledWith(2);
       expect(builder.offset).toHaveBeenCalledWith(2);

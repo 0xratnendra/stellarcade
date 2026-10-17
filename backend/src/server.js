@@ -64,11 +64,23 @@ app.use(errorHandler);
  */
 const PORT = process.env.PORT || 3000;
 let server;
+const workers = [];
 if (process.env.NODE_ENV !== 'test') {
   server = app.listen(PORT, () => {
     logger.info(`🚀 Stellarcade Backend is live on port ${PORT}`);
     logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
   });
+
+  // Chain workers. A misconfigured worker throws here and stops startup:
+  // running with it silently disabled would leave bets unresolved.
+  if (process.env.ORACLE_ENABLED === 'true') {
+    const { startOracleWorker } = require('./services/oracle.worker');
+    workers.push(startOracleWorker());
+  }
+  if (process.env.INDEXER_ENABLED === 'true') {
+    const { startIndexerWorker } = require('./services/indexer.worker');
+    workers.push(startIndexerWorker());
+  }
 }
 
 /**
@@ -76,6 +88,8 @@ if (process.env.NODE_ENV !== 'test') {
  */
 const gracefulShutdown = async () => {
   logger.info('SIGTERM/SIGINT received. Starting graceful shutdown...');
+
+  workers.forEach((worker) => worker.stop());
 
   // Close the server first to stop accepting new requests
   server.close(async () => {
