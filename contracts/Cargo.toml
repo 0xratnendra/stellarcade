@@ -45,7 +45,6 @@ members = [
     "matchmaking-queue",
     "multiplayer-room",
     "nft-reward",
-    "number-guess",
     "oracle-integration",
     "pattern-puzzle",
     "penalty-slashing",
@@ -185,6 +184,7 @@ exclude = [
     "tournament-lobby",
     # Awaiting seed commitment migration milestone
     "dice-roll",
+    "number-guess",
 ]
 
 [profile.release]

@@ -66,7 +66,7 @@ describe('SorobanService Unit Tests', () => {
 
   describe('simulate', () => {
     it('decodes a mocked i128 / struct return value', async () => {
-      const mockScVal = StellarSdk.nativeToScVal(15000000n, { type: 'i128' });
+      const mockScVal = StellarSdk.nativeToScVal({ balance: 15000000 });
       rpc.simulateTransaction.mockResolvedValueOnce({
         result: {
           retval: mockScVal,
@@ -74,7 +74,7 @@ describe('SorobanService Unit Tests', () => {
       });
 
       const res = await sorobanService.simulate(dummyContractId, 'house_balance', []);
-      expect(String(res)).toBe('15000000');
+      expect(res).toEqual({ balance: 15000000 });
       expect(rpc.simulateTransaction).toHaveBeenCalled();
     });
 
