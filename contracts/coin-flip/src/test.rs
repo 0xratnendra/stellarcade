@@ -52,11 +52,24 @@ fn setup(env: &Env) -> Setup<'_> {
     rng_client.init(&admin, &oracle);
     rng_client.authorize(&admin, &flip_id);
 
+    // Pre-commit a batch of seed commitments so requests can pop them in FIFO order
+    let mut commitments = soroban_sdk::Vec::new(env);
+    for i in 0..100u8 {
+        let s = seed(env, i);
+        let h: BytesN<32> = env
+            .crypto()
+            .sha256(&soroban_sdk::Bytes::from_slice(env, &s.to_array()))
+            .into();
+        commitments.push_back(h);
+    }
+    rng_client.commit_seeds(&oracle, &commitments);
+
     // Init CoinFlip: min=10, max=1000, house edge 250 bps (2.5%)
     flip_client.init(&admin, &rng_id, &token_addr, &10i128, &1000i128, &250i128);
 
     // Fund the contract so it can pay out winners
-    token_sac.mint(&flip_id, &100_000i128);
+    token_sac.mint(&admin, &100_000i128);
+    flip_client.fund_house(&admin, &100_000i128);
 
     Setup {
         flip_client,
@@ -167,23 +180,16 @@ fn test_resolve_loss() {
     let player = Address::generate(&env);
     s.token_sac.mint(&player, &500);
 
-    s.flip_client.place_bet(&player, &HEADS, &100, &2u64);
+    // With seed(0) and game_id 3, derive_rng_result produces 1 (Tails).
+    // Player bet Heads (0), so they lose.
+    let game_id = 3u64;
+    s.flip_client.place_bet(&player, &HEADS, &100, &game_id);
 
-    // Find a seed that gives result 1 (Tails) — player bet Heads, so they lose
-    let mut losing_seed = seed(&env, 0);
-    for i in 0u8..=255 {
-        let test_seed = seed(&env, i);
-        let result = derive_rng_result(&env, &test_seed, 2u64, 2);
-        if result == 1 {
-            losing_seed = test_seed;
-            break;
-        }
-    }
+    let losing_seed = seed(&env, 0);
+    s.rng_client.fulfill_random(&s.oracle, &game_id, &losing_seed);
+    s.flip_client.resolve_bet(&game_id);
 
-    s.rng_client.fulfill_random(&s.oracle, &2u64, &losing_seed);
-    s.flip_client.resolve_bet(&2u64);
-
-    let game = s.flip_client.get_game(&2u64);
+    let game = s.flip_client.get_game(&game_id);
     assert!(game.resolved);
     assert!(!game.won);
     assert_eq!(game.payout, 0);
@@ -303,7 +309,7 @@ fn test_double_resolve_rejected() {
 
     s.flip_client.place_bet(&player, &HEADS, &100, &1u64);
 
-    let rng_seed = seed(&env, 42);
+    let rng_seed = seed(&env, 0);
     s.rng_client.fulfill_random(&s.oracle, &1u64, &rng_seed);
     s.flip_client.resolve_bet(&1u64);
 
@@ -484,7 +490,7 @@ fn test_exposure_snapshot_resets_after_resolve() {
     assert_eq!(before.active_game_count, 1);
 
     // Fulfill RNG and resolve so the exposure counter decrements
-    let srv = seed(&env, 0x01);
+    let srv = seed(&env, 0);
     s.rng_client.fulfill_random(&s.oracle, &42u64, &srv);
     s.flip_client.resolve_bet(&42u64);
 
@@ -492,4 +498,159 @@ fn test_exposure_snapshot_resets_after_resolve() {
     assert_eq!(after.active_game_count, 0);
     assert_eq!(after.total_wagered, 0);
     assert_eq!(after.max_payout_liability, 0);
+}
+
+// -------------------------------------------------------------------
+// House Bankroll & Liquidity Tests (#1375)
+// -------------------------------------------------------------------
+
+#[test]
+fn test_insufficient_house_liquidity_rejected() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+
+    let (token_addr, token_sac) = create_token(&env, &token_admin);
+
+    let rng_id = env.register(RandomGenerator, ());
+    let rng_client = RandomGeneratorClient::new(&env, &rng_id);
+
+    let flip_id = env.register(CoinFlip, ());
+    let flip_client = CoinFlipClient::new(&env, &flip_id);
+
+    env.mock_all_auths();
+
+    rng_client.init(&admin, &oracle);
+    rng_client.authorize(&admin, &flip_id);
+
+    // Commit seeds
+    let mut commitments = soroban_sdk::Vec::new(&env);
+    commitments.push_back(
+        env.crypto()
+            .sha256(&soroban_sdk::Bytes::from_slice(&env, &seed(&env, 0).to_array()))
+            .into(),
+    );
+    rng_client.commit_seeds(&oracle, &commitments);
+
+    flip_client.init(&admin, &rng_id, &token_addr, &10i128, &1000i128, &250i128);
+
+    // House has 0 balance! Bet wager 100 has liability 197. Total available would be 100 < 197.
+    let player = Address::generate(&env);
+    token_sac.mint(&player, &500i128);
+
+    let res = flip_client.try_place_bet(&player, &HEADS, &100i128, &1u64);
+    assert_eq!(res, Err(Ok(Error::InsufficientHouseLiquidity)));
+
+    // Player balance must be completely unchanged
+    assert_eq!(tc(&env, &token_addr).balance(&player), 500i128);
+}
+
+#[test]
+fn test_exact_house_liquidity_accepted() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+
+    let (token_addr, token_sac) = create_token(&env, &token_admin);
+
+    let rng_id = env.register(RandomGenerator, ());
+    let rng_client = RandomGeneratorClient::new(&env, &rng_id);
+
+    let flip_id = env.register(CoinFlip, ());
+    let flip_client = CoinFlipClient::new(&env, &flip_id);
+
+    env.mock_all_auths();
+
+    rng_client.init(&admin, &oracle);
+    rng_client.authorize(&admin, &flip_id);
+
+    let mut commitments = soroban_sdk::Vec::new(&env);
+    commitments.push_back(
+        env.crypto()
+            .sha256(&soroban_sdk::Bytes::from_slice(&env, &seed(&env, 0).to_array()))
+            .into(),
+    );
+    rng_client.commit_seeds(&oracle, &commitments);
+
+    flip_client.init(&admin, &rng_id, &token_addr, &10i128, &1000i128, &250i128);
+
+    // For wager 100 with house edge 250 bps, max liability is 197.
+    // If house has exactly 97, available = 97 + 100 = 197 == liability.
+    token_sac.mint(&admin, &97i128);
+    flip_client.fund_house(&admin, &97i128);
+
+    let player = Address::generate(&env);
+    token_sac.mint(&player, &500i128);
+
+    let res = flip_client.try_place_bet(&player, &HEADS, &100i128, &1u64);
+    assert!(res.is_ok());
+    assert_eq!(tc(&env, &token_addr).balance(&player), 400i128);
+}
+
+#[test]
+fn test_withdraw_house_below_liability_rejected() {
+    let env = Env::default();
+    let s = setup(&env);
+    env.mock_all_auths();
+
+    let player = Address::generate(&env);
+    s.token_sac.mint(&player, &500i128);
+    s.flip_client.place_bet(&player, &HEADS, &100i128, &1u64);
+
+    let snap = s.flip_client.house_exposure_snapshot();
+    let liability = snap.max_payout_liability; // 197
+    let balance = s.flip_client.house_balance();
+
+    // Withdrawing more than (balance - liability) must fail
+    let excessive_withdrawal = balance - liability + 1;
+    let res = s.flip_client.try_withdraw_house(&s.admin, &excessive_withdrawal);
+    assert_eq!(res, Err(Ok(Error::InsufficientHouseLiquidity)));
+
+    // Withdrawing within safe margin succeeds
+    let safe_withdrawal = balance - liability;
+    let safe_res = s.flip_client.try_withdraw_house(&s.admin, &safe_withdrawal);
+    assert!(safe_res.is_ok());
+}
+
+#[test]
+fn test_fund_and_resolve_win_payout() {
+    let env = Env::default();
+    let s = setup(&env);
+    env.mock_all_auths();
+
+    // Additional funding
+    s.token_sac.mint(&s.admin, &5000i128);
+    s.flip_client.fund_house(&s.admin, &5000i128);
+
+    let player = Address::generate(&env);
+    s.token_sac.mint(&player, &500i128);
+
+    s.flip_client.place_bet(&player, &HEADS, &100i128, &1u64);
+
+    // Winning seed with game_id 1 is seed(0)
+    let win_seed = seed(&env, 0);
+    s.rng_client.fulfill_random(&s.oracle, &1u64, &win_seed);
+    s.flip_client.resolve_bet(&1u64);
+
+    let game = s.flip_client.get_game(&1u64);
+    assert!(game.won);
+    assert_eq!(tc(&env, &s.token_addr).balance(&player), 598i128);
+}
+
+#[test]
+fn test_non_admin_fund_and_withdraw_rejected() {
+    let env = Env::default();
+    let s = setup(&env);
+    env.mock_all_auths();
+
+    let impostor = Address::generate(&env);
+    s.token_sac.mint(&impostor, &1000i128);
+
+    let fund_res = s.flip_client.try_fund_house(&impostor, &100i128);
+    assert_eq!(fund_res, Err(Ok(Error::NotAuthorized)));
+
+    let withdraw_res = s.flip_client.try_withdraw_house(&impostor, &100i128);
+    assert_eq!(withdraw_res, Err(Ok(Error::NotAuthorized)));
 }

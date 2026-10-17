@@ -50,20 +50,24 @@ const server = new StellarSdk.Horizon.Server(horizonUrl, {
   },
 });
 
+const sorobanRpcUrl = process.env.SOROBAN_RPC_URL || 'https://soroban-testnet.stellar.org';
+const rpc = new StellarSdk.rpc.Server(sorobanRpcUrl, {
+  allowHttp: process.env.NODE_ENV !== 'production',
+  timeout: requestTimeout,
+});
+
 logger.info(
-  `Stellar SDK initialized for ${network} at ${horizonUrl} (timeout=${requestTimeout}ms, maxRetries=${maxRetries})`
+  `Stellar SDK initialized for ${network} at ${horizonUrl} (rpc=${sorobanRpcUrl}, timeout=${requestTimeout}ms, maxRetries=${maxRetries})`
 );
 
 /**
- * Helper to get Contract Client (Skeleton)
+ * Helper to get Contract Client (Skeleton - deprecated in favor of soroban.service)
  */
 const getContractClient = (contractId) => {
-  // TODO: Add Soroban client initialization logic when SDK v12+ is integrated
   return {
     contractId,
     invoke: async (method, _args) => {
       logger.info(`Invoking ${method} on ${contractId}`);
-      // Mock result
       return { status: 'pending' };
     },
   };
@@ -71,9 +75,11 @@ const getContractClient = (contractId) => {
 
 module.exports = {
   server,
+  rpc,
   network,
   passphrase,
   horizonUrl,
+  sorobanRpcUrl,
   requestTimeout,
   maxRetries,
   retryInterval,

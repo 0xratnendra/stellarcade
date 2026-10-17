@@ -27,7 +27,6 @@ members = [
     "cross-contract-handler",
     "daily-trivia",
     "deployment-scripts",
-    "dice-roll",
     "dynamic-fee-policy",
     "duel-engine",
     "emergency-pause",
@@ -46,7 +45,6 @@ members = [
     "matchmaking-queue",
     "multiplayer-room",
     "nft-reward",
-    "number-guess",
     "oracle-integration",
     "pattern-puzzle",
     "penalty-slashing",
@@ -184,6 +182,9 @@ exclude = [
     "contract-address-registry",
     "reward-router",
     "tournament-lobby",
+    # Awaiting seed commitment migration milestone
+    "dice-roll",
+    "number-guess",
 ]
 
 [profile.release]

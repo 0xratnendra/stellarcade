@@ -121,3 +121,58 @@ pub fn house_exposure_snapshot(env: Env) -> Result<HouseExposureSnapshot, Error>
 
 `Result<HouseExposureSnapshot, Error>`
 
+### `fund_house`
+Fund the house bankroll. Admin only.
+
+```rust
+pub fn fund_house(env: Env, admin: Address, amount: i128) -> Result<(), Error>
+```
+
+#### Parameters
+
+| Name | Type |
+|------|------|
+| `env` | `Env` |
+| `admin` | `Address` |
+| `amount` | `i128` |
+
+#### Return Type
+
+`Result<(), Error>`
+
+### `withdraw_house`
+Withdraw from the house bankroll without dropping below current exposure liability. Admin only.
+
+```rust
+pub fn withdraw_house(env: Env, admin: Address, amount: i128) -> Result<(), Error>
+```
+
+#### Parameters
+
+| Name | Type |
+|------|------|
+| `env` | `Env` |
+| `admin` | `Address` |
+| `amount` | `i128` |
+
+#### Return Type
+
+`Result<(), Error>`
+
+### `house_balance`
+Read-only getter for the contract's token balance.
+
+```rust
+pub fn house_balance(env: Env) -> Result<i128, Error>
+```
+
+#### Parameters
+
+| Name | Type |
+|------|------|
+| `env` | `Env` |
+
+#### Return Type
+
+`Result<i128, Error>`
+
