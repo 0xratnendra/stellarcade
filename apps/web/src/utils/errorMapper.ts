@@ -499,8 +499,21 @@ const CONTRACT_ERROR_MAPS: Record<
     4: "CONTRACT_NOT_FOUND" as ContractErrorCode,
     5: "CONTRACT_GAME_ALREADY_RESERVED" as ContractErrorCode,
   },
+  // Mirrors `Error` in contracts/coin-flip/src/lib.rs (append-only there too).
   coin_flip: {
     ...SHARED_CONTRACT_ERRORS,
+    4: "CONTRACT_INVALID_AMOUNT",
+    5: "CONTRACT_INVALID_SIDE",
+    6: "CONTRACT_GAME_ALREADY_EXISTS",
+    7: "CONTRACT_GAME_NOT_FOUND",
+    8: "CONTRACT_GAME_ALREADY_RESOLVED",
+    9: "CONTRACT_RNG_NOT_FULFILLED",
+    10: "CONTRACT_WAGER_TOO_LOW",
+    11: "CONTRACT_WAGER_TOO_HIGH",
+    12: "CONTRACT_OVERFLOW",
+    13: "CONTRACT_INSUFFICIENT_HOUSE_LIQUIDITY",
+    14: "CONTRACT_REFUND_NOT_YET_AVAILABLE",
+    15: "CONTRACT_GAME_REFUNDED",
   },
 };
 
@@ -519,6 +532,16 @@ const CONTRACT_ERROR_SEVERITY: Record<ContractErrorCode, ErrorSeverity> = {
   CONTRACT_REQUEST_NOT_FOUND: ErrorSeverity.TERMINAL,
   CONTRACT_ALREADY_FULFILLED: ErrorSeverity.TERMINAL,
   CONTRACT_UNAUTHORIZED_CALLER: ErrorSeverity.USER_ACTIONABLE,
+  CONTRACT_INVALID_SIDE: ErrorSeverity.USER_ACTIONABLE,
+  CONTRACT_GAME_ALREADY_EXISTS: ErrorSeverity.RETRYABLE,
+  CONTRACT_GAME_NOT_FOUND: ErrorSeverity.TERMINAL,
+  CONTRACT_GAME_ALREADY_RESOLVED: ErrorSeverity.TERMINAL,
+  CONTRACT_RNG_NOT_FULFILLED: ErrorSeverity.RETRYABLE,
+  CONTRACT_WAGER_TOO_LOW: ErrorSeverity.USER_ACTIONABLE,
+  CONTRACT_WAGER_TOO_HIGH: ErrorSeverity.USER_ACTIONABLE,
+  CONTRACT_INSUFFICIENT_HOUSE_LIQUIDITY: ErrorSeverity.USER_ACTIONABLE,
+  CONTRACT_REFUND_NOT_YET_AVAILABLE: ErrorSeverity.USER_ACTIONABLE,
+  CONTRACT_GAME_REFUNDED: ErrorSeverity.TERMINAL,
   CONTRACT_UNKNOWN: ErrorSeverity.TERMINAL,
 };
 
@@ -542,6 +565,18 @@ const CONTRACT_ERROR_MESSAGES: Record<ContractErrorCode, string> = {
     "This randomness request has already been fulfilled.",
   CONTRACT_UNAUTHORIZED_CALLER:
     "This contract is not authorized to request randomness.",
+  CONTRACT_INVALID_SIDE: "Pick heads or tails.",
+  CONTRACT_GAME_ALREADY_EXISTS: "A game with this ID already exists. Please try again.",
+  CONTRACT_GAME_NOT_FOUND: "Coin flip game not found.",
+  CONTRACT_GAME_ALREADY_RESOLVED: "This coin flip game has already been resolved.",
+  CONTRACT_RNG_NOT_FULFILLED: "Waiting for the randomness oracle to fulfil this round.",
+  CONTRACT_WAGER_TOO_LOW: "Wager is below the minimum bet for this game.",
+  CONTRACT_WAGER_TOO_HIGH: "Wager is above the maximum bet for this game.",
+  CONTRACT_INSUFFICIENT_HOUSE_LIQUIDITY:
+    "The house cannot cover this wager right now. Try a smaller bet.",
+  CONTRACT_REFUND_NOT_YET_AVAILABLE:
+    "This bet can't be refunded yet. Wait for the refund timeout to pass.",
+  CONTRACT_GAME_REFUNDED: "This bet was refunded and can no longer be resolved.",
   CONTRACT_UNKNOWN: "Unknown contract error.",
 };
 

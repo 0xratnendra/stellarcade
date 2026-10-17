@@ -28,9 +28,15 @@ import { Command, RefreshCw } from "lucide-react";
 import { useWalletStatus } from "../hooks/useWalletStatus";
 import { ApiClient, ONCHAIN_GAMES_CATALOG } from "../services/typed-api-sdk";
 import defaultFreighterAdapter from "../services/freighter-adapter";
-import CoinFlipResultCard from "./CoinFlipResultCard";
 import Drawer from "./Drawer";
-import { CoinFlipGame, CoinFlipGameState, CoinFlipSide } from "../types/contracts/coinFlip";
+import { CoinFlipSide } from "../types/contracts/coinFlip";
+import {
+  CoinFlipBetError,
+  getCoinFlipConfig,
+  placeBet,
+  stroopsToXlm,
+} from "../services/coin-flip-client";
+import { useCoinFlipGame } from "../hooks/useCoinFlipGame";
 import GlobalStateStore, {
   getTableDensityPreference,
   ONBOARDING_CHECKLIST_DISMISSED_FLAG,
@@ -246,7 +252,9 @@ export const GameLobby: React.FC = () => {
   const [playWager, setPlayWager] = useState<number>(5);
   const [playSide, setPlaySide] = useState<CoinFlipSide>(CoinFlipSide.Heads);
   const [isExecutingPlay, setIsExecutingPlay] = useState<boolean>(false);
-  const [activeGameResult, setActiveGameResult] = useState<CoinFlipGame | null>(null);
+  const [placedBet, setPlacedBet] = useState<{ gameId: bigint; txHash: string } | null>(null);
+  const [betError, setBetError] = useState<string | null>(null);
+  const liveGame = useCoinFlipGame(placedBet?.gameId ?? null);
 
   const fetchGames = useCallback(async () => {
     try {
@@ -274,7 +282,8 @@ export const GameLobby: React.FC = () => {
 
   const handleStartPlay = useCallback((game: Game) => {
     setActivePlayGame(game);
-    setActiveGameResult(null);
+    setPlacedBet(null);
+    setBetError(null);
   }, []);
 
   const handleExecutePlay = useCallback(async () => {
@@ -287,23 +296,39 @@ export const GameLobby: React.FC = () => {
       return;
     }
 
+    // The contract lives on one network; refuse to sign anywhere else.
+    let networkPassphrase: string;
+    try {
+      networkPassphrase = getCoinFlipConfig().networkPassphrase;
+    } catch (configError) {
+      setBetError(configError instanceof Error ? configError.message : String(configError));
+      return;
+    }
+    const networkCheck = isSupportedNetwork(wallet.network, {
+      supportedNetworks: [networkPassphrase],
+    });
+    if (!networkCheck.isSupported || !wallet.address) {
+      setBetError(
+        `Switch Freighter to ${networkCheck.supportedNetworks.join(" / ")} to place a bet.`,
+      );
+      return;
+    }
+
+    setBetError(null);
     setIsExecutingPlay(true);
     try {
-      // Simulate/execute provably fair round
-      await new Promise((resolve) => setTimeout(resolve, 800));
-
-      const isWin = Math.random() > 0.48;
-      const gameId = `cf-${Date.now().toString(16)}-${Math.random().toString(36).slice(2, 6)}`;
-      const resultGame: CoinFlipGame = {
-        id: gameId,
-        wager: `${playWager}`,
-        side: playSide,
-        status: CoinFlipGameState.Resolved,
-        winner: isWin ? wallet.address ?? "PLAYER" : "HOUSE_VAULT",
-        settledAt: Date.now(),
-      };
-
-      setActiveGameResult(resultGame);
+      const placed = await placeBet({
+        player: wallet.address,
+        side: playSide === CoinFlipSide.Heads ? 0 : 1,
+        wagerXlm: String(playWager),
+      });
+      setPlacedBet(placed);
+    } catch (placeError) {
+      setBetError(
+        placeError instanceof CoinFlipBetError
+          ? placeError.message
+          : "Could not place the bet. Please try again.",
+      );
     } finally {
       setIsExecutingPlay(false);
     }
@@ -1228,16 +1253,89 @@ export const GameLobby: React.FC = () => {
                 : "Instant on-chain duel backed by Stellar smart contract and SHA-256 commit-reveal."}
             </p>
 
-            {activeGameResult ? (
+            {placedBet ? (
               <div>
-                <CoinFlipResultCard
-                  game={activeGameResult}
-                  currentWalletAddress={wallet.address ?? undefined}
-                  onRetry={() => setActiveGameResult(null)}
-                />
+                <div
+                  className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-slate-200"
+                  data-testid="coinflip-live-result"
+                  aria-live="polite"
+                >
+                  {liveGame.status === "resolved" && liveGame.game ? (
+                    liveGame.game.refunded ? (
+                      <p className="font-bold" data-testid="coinflip-outcome">
+                        Bet refunded: {stroopsToXlm(liveGame.game.wager)} XLM returned
+                      </p>
+                    ) : (
+                      <>
+                        <p className="font-bold" data-testid="coinflip-outcome">
+                          {/* The coin landed on the player's side iff they won. */}
+                          Landed on{" "}
+                          {(liveGame.game.won ? liveGame.game.side : 1 - liveGame.game.side) === 0
+                            ? "Heads"
+                            : "Tails"}{" "}
+                          · {liveGame.game.won ? "You won" : "You lost"}
+                        </p>
+                        <p className="mt-1">
+                          Payout: {stroopsToXlm(liveGame.game.payout)} XLM (wager{" "}
+                          {stroopsToXlm(liveGame.game.wager)} XLM)
+                        </p>
+                      </>
+                    )
+                  ) : liveGame.status === "timeout" ? (
+                    <p className="font-bold" data-testid="coinflip-outcome">
+                      Still waiting for the oracle to fulfil this round…
+                    </p>
+                  ) : liveGame.status === "error" ? (
+                    <p className="font-bold text-rose-300" data-testid="coinflip-outcome">
+                      Couldn&apos;t read the game state: {liveGame.error}
+                    </p>
+                  ) : (
+                    <p className="font-bold" data-testid="coinflip-outcome">
+                      Bet placed · waiting for the result…
+                    </p>
+                  )}
+                  <p className="mt-2 break-all font-mono text-xs text-slate-400">
+                    Game ID: {placedBet.gameId.toString()}
+                  </p>
+                  <ul className="mt-2 flex flex-col gap-1 text-xs">
+                    <li>
+                      <a
+                        href={`https://stellar.expert/explorer/testnet/tx/${placedBet.txHash}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sky-300 underline"
+                      >
+                        Bet transaction
+                      </a>
+                    </li>
+                    {liveGame.resolveTxHash ? (
+                      <li>
+                        <a
+                          href={`https://stellar.expert/explorer/testnet/tx/${liveGame.resolveTxHash}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-sky-300 underline"
+                        >
+                          Resolution transaction
+                        </a>
+                      </li>
+                    ) : null}
+                    {liveGame.status === "resolved" && !liveGame.game?.refunded ? (
+                      <li>
+                        <a
+                          href={`/verify?requestId=${placedBet.gameId.toString()}`}
+                          className="text-sky-300 underline"
+                          data-testid="coinflip-verify-link"
+                        >
+                          Verify this round
+                        </a>
+                      </li>
+                    ) : null}
+                  </ul>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setActiveGameResult(null)}
+                  onClick={() => setPlacedBet(null)}
                   className="stellarcade-btn stellarcade-btn-primary w-full mt-4"
                   data-testid="btn-play-again"
                 >
@@ -1301,6 +1399,11 @@ export const GameLobby: React.FC = () => {
                 </div>
 
                 <div className="mt-2">
+                  {betError ? (
+                    <p role="alert" className="mb-2 text-sm text-rose-300" data-testid="bet-error">
+                      {betError}
+                    </p>
+                  ) : null}
                   <button
                     type="button"
                     onClick={handleExecutePlay}
@@ -1309,7 +1412,7 @@ export const GameLobby: React.FC = () => {
                     data-testid="btn-confirm-bet"
                   >
                     {isExecutingPlay
-                      ? "🎲 Settling on Soroban..."
+                      ? "🎲 Placing bet on Soroban..."
                       : !wallet.capabilities.isConnected
                       ? "Connect Wallet & Play"
                       : `Place ${playWager} XLM Bet`}
