@@ -39,15 +39,30 @@ vi.mock("../hooks/useWalletStatus", () => ({
   useWalletStatus: () => walletState,
 }));
 
+const networkGuard = vi.hoisted(() => ({ isSupported: true }));
+
 vi.mock("../utils/useNetworkGuard", () => ({
   isSupportedNetwork: () => ({
-    isSupported: true,
+    isSupported: networkGuard.isSupported,
     normalizedActual: "TESTNET",
     supportedNetworks: ["TESTNET", "PUBLIC"],
   }),
 }));
 
+const coinFlip = vi.hoisted(() => ({ placeBet: vi.fn() }));
+
+vi.mock("../services/coin-flip-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../services/coin-flip-client")>()),
+  placeBet: coinFlip.placeBet,
+}));
+
+vi.mock("../hooks/useCoinFlipGame", () => ({
+  useCoinFlipGame: (gameId: bigint | null) => ({ status: gameId === null ? "idle" : "pending" }),
+}));
+
 beforeEach(() => {
+  networkGuard.isSupported = true;
+  coinFlip.placeBet.mockReset();
   localStorage.clear();
   sessionStorage.clear();
   commandStore.dispatch({ type: "COMMAND_PALETTE_CLOSE" });
@@ -330,5 +345,74 @@ describe("GameLobby", () => {
 
     fireEvent.click(screen.getByTestId("lobby-compact-stats-toggle"));
     expect(screen.getByTestId("lobby-compact-stats-panel")).not.toHaveAttribute("hidden");
+  });
+});
+
+describe("GameLobby coin-flip play", () => {
+  const PLAYER = "GDVEU3DD4KOFECV66VIHWEZOYX4ZKR3WV27L464SIIPOU2IUI3JCZA57";
+
+  beforeEach(() => {
+    vi.stubEnv("NEXT_PUBLIC_COIN_FLIP_CONTRACT_ID", "CD2JPFUCKNDMA3OVYVQOAELTMR5VQPMAA6J6GJYQE2SQFNGKCBSSOKG5");
+    vi.stubEnv("NEXT_PUBLIC_SOROBAN_RPC_URL", "https://soroban-testnet.stellar.org");
+    vi.stubEnv("NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE", "Test SDF Network ; September 2015");
+    walletState.status = "CONNECTED";
+    (walletState as { address: string | null }).address = PLAYER;
+    (walletState as { network: string | null }).network = "TESTNET";
+    walletState.capabilities = {
+      isConnected: true,
+      isConnecting: false,
+      isReconnecting: false,
+      canConnect: false,
+    };
+    (ApiClient as any).prototype.getGames.mockResolvedValue({
+      success: true,
+      data: [{ id: "coin-flip", name: "Coin Flip", status: "active", wager: 5 }],
+    });
+  });
+
+  async function openPlayDrawer() {
+    render(<GameLobby />);
+    const playButtons = await screen.findAllByRole("button", { name: /Play Now/i });
+    fireEvent.click(playButtons[0]);
+    return screen.findByTestId("btn-confirm-bet");
+  }
+
+  it("places a real bet and shows it as pending with the game id and tx hash", async () => {
+    const randomSpy = vi.spyOn(Math, "random");
+    coinFlip.placeBet.mockResolvedValue({ gameId: 9876543210n, txHash: "c".repeat(64) });
+
+    fireEvent.click(await openPlayDrawer());
+
+    expect(await screen.findByTestId("coinflip-live-result")).toBeInTheDocument();
+    expect(coinFlip.placeBet).toHaveBeenCalledWith({ player: PLAYER, side: 0, wagerXlm: "5" });
+    expect(screen.getByTestId("coinflip-outcome")).toHaveTextContent(/waiting for the result/i);
+    expect(screen.getByText(/9876543210/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Bet transaction/i })).toHaveAttribute(
+      "href",
+      `https://stellar.expert/explorer/testnet/tx/${"c".repeat(64)}`,
+    );
+    expect(randomSpy).not.toHaveBeenCalled();
+    randomSpy.mockRestore();
+  });
+
+  it("a rejected signature leaves no pending game and shows the rejection", async () => {
+    const { CoinFlipBetError } = await import("../services/coin-flip-client");
+    const { toAppError } = await import("../utils/errorMapper");
+    const { RejectedSignatureError } = await import("../types/wallet-session");
+    coinFlip.placeBet.mockRejectedValue(new CoinFlipBetError(toAppError(new RejectedSignatureError())));
+
+    fireEvent.click(await openPlayDrawer());
+
+    expect(await screen.findByTestId("bet-error")).toHaveTextContent("Transaction was rejected by the user.");
+    expect(screen.queryByTestId("coinflip-live-result")).not.toBeInTheDocument();
+  });
+
+  it("blocks betting on the wrong network without asking to sign", async () => {
+    networkGuard.isSupported = false;
+
+    fireEvent.click(await openPlayDrawer());
+
+    expect(await screen.findByTestId("bet-error")).toHaveTextContent(/Switch Freighter/i);
+    expect(coinFlip.placeBet).not.toHaveBeenCalled();
   });
 });

@@ -19,21 +19,36 @@ import { Button } from "../../../src/components/ui/button";
 import { PageHeader } from "../../../src/components/ui/page-header";
 import { cn } from "../../../src/lib/utils";
 import {
-  verifyFairnessProof,
-  FAIRNESS_TEST_VECTORS,
-  type FairnessVerificationOutcome,
-  type VerificationInput,
-  type TestVectorPreset,
-} from "../../../src/utils/fairness-verifier";
+  buildRoundReport,
+  ROUND_PRESETS,
+  type RoundReport,
+} from "../../../src/utils/round-verifier";
+import {
+  createCoinFlipRpc,
+  getCoinFlipConfig,
+  getGame,
+  getRandomGeneratorContractId,
+  getRandomResult,
+} from "../../../src/services/coin-flip-client";
 
-const DEFAULT_INPUT: VerificationInput = {
-  serverSeed: FAIRNESS_TEST_VECTORS[0].input.serverSeed,
-  commitHash: FAIRNESS_TEST_VECTORS[0].input.commitHash,
-  clientSeed: FAIRNESS_TEST_VECTORS[0].input.clientSeed,
-  nonce: FAIRNESS_TEST_VECTORS[0].input.nonce,
-  ledgerHash: FAIRNESS_TEST_VECTORS[0].input.ledgerHash,
-  rangeSize: 2,
-};
+interface ManualInput {
+  serverSeed: string;
+  commitment: string;
+  requestId: string;
+  max: string;
+  claimedResult: string;
+}
+
+const DEFAULT_INPUT: ManualInput = { ...ROUND_PRESETS[0].input, claimedResult: "" };
+
+/** Reads a fulfilled request (and its coin-flip game, if any) from chain. */
+async function loadOnChainRound(requestId: bigint) {
+  const config = getCoinFlipConfig();
+  const server = createCoinFlipRpc(config);
+  const entry = await getRandomResult(server, config, getRandomGeneratorContractId(), requestId);
+  const game = await getGame(server, config, requestId).catch(() => null);
+  return { entry, game };
+}
 
 /** Shared field chrome — dark glass input with an accent focus ring. */
 const FIELD_CLASS =
@@ -100,45 +115,77 @@ function SectionCard({
 
 function VerifyPageContent() {
   const searchParams = useSearchParams();
-  const [input, setInput] = useState<VerificationInput>(DEFAULT_INPUT);
-  const [result, setResult] = useState<FairnessVerificationOutcome | null>(null);
+  const requestIdParam = searchParams?.get("requestId") ?? null;
+  const [input, setInput] = useState<ManualInput>(DEFAULT_INPUT);
+  const [result, setResult] = useState<RoundReport | null>(null);
+  const [onChainState, setOnChainState] = useState<
+    { status: "loading" } | { status: "ready"; requestId: string } | { status: "error"; message: string } | null
+  >(null);
+  const [onChainRound, setOnChainRound] = useState<{ result: bigint; game: Awaited<ReturnType<typeof getGame>> | null } | null>(null);
   const [copied, setCopied] = useState(false);
   const [, startTransition] = useTransition();
 
+  // /verify?requestId=<game id>: load the round's revealed seed and stored
+  // result from the random-generator contract and verify those, not inputs.
   useEffect(() => {
-    if (!searchParams) return;
-    const serverSeed = searchParams.get("serverSeed") || searchParams.get("secret");
-    const commitHash = searchParams.get("commitHash") || searchParams.get("hash");
-    const clientSeed = searchParams.get("clientSeed");
-    const nonce = searchParams.get("nonce");
-    const rangeSize = searchParams.get("rangeSize");
-
-    if (serverSeed || commitHash || clientSeed) {
-      setInput((prev) => ({
-        ...prev,
-        serverSeed: serverSeed ?? prev.serverSeed,
-        commitHash: commitHash ?? prev.commitHash,
-        clientSeed: clientSeed ?? prev.clientSeed,
-        nonce: nonce ? Number(nonce) : prev.nonce,
-        rangeSize: rangeSize ? Number(rangeSize) : prev.rangeSize,
-      }));
+    if (!requestIdParam) return;
+    let requestId: bigint;
+    try {
+      requestId = BigInt(requestIdParam);
+    } catch {
+      setOnChainState({ status: "error", message: `"${requestIdParam}" is not a valid request id` });
+      return;
     }
-  }, [searchParams]);
+    let cancelled = false;
+    setOnChainState({ status: "loading" });
+    loadOnChainRound(requestId)
+      .then(({ entry, game }) => {
+        if (cancelled) return;
+        setInput({
+          serverSeed: entry.serverSeed,
+          commitment: entry.commitment,
+          requestId: requestId.toString(),
+          max: entry.max.toString(),
+          claimedResult: "",
+        });
+        setOnChainRound({ result: entry.result, game });
+        setOnChainState({ status: "ready", requestId: requestId.toString() });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : String(error);
+        setOnChainState({
+          status: "error",
+          message: /Error\(Contract, #6\)/.test(message)
+            ? "This round has not been fulfilled by the oracle yet."
+            : message,
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [requestIdParam]);
 
   const runVerification = () => {
-    startTransition(async () => {
-      const outcome = await verifyFairnessProof(input);
-      setResult(outcome);
+    startTransition(() => {
+      setResult(
+        buildRoundReport(
+          input,
+          onChainRound && onChainState?.status === "ready" ? onChainRound : undefined,
+        ),
+      );
     });
   };
 
   useEffect(() => {
     runVerification();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [input.serverSeed, input.commitHash, input.clientSeed, input.nonce, input.ledgerHash, input.rangeSize]);
+  }, [input.serverSeed, input.commitment, input.requestId, input.max, input.claimedResult, onChainRound]);
 
-  const handleApplyPreset = (preset: TestVectorPreset) => {
-    setInput({ ...preset.input });
+  const handleApplyPreset = (preset: (typeof ROUND_PRESETS)[number]) => {
+    setOnChainRound(null);
+    setOnChainState(null);
+    setInput({ ...preset.input, claimedResult: "" });
   };
 
   const handleCopyReport = () => {
@@ -147,11 +194,10 @@ function VerifyPageContent() {
       {
         timestamp: new Date().toISOString(),
         verified: result.isValid,
-        serverSeedCommitMatch: result.commitmentMatch,
-        recomputedCommitHash: result.recomputedCommitHash,
-        derivedHex: result.derivedHex,
-        mappedOutcome: result.mappedOutcome,
-        gameLabel: result.gameLabel,
+        source: onChainState?.status === "ready" ? "on-chain" : "manual",
+        result: result.result?.toString() ?? null,
+        outcome: result.outcomeLabel,
+        checks: result.checks,
         input,
       },
       null,
@@ -178,13 +224,13 @@ function VerifyPageContent() {
           </Badge>
         }
         title="Provable Fairness Verifier"
-        description="Verify the cryptographic fairness of any StellarCade round client-side. Recomputes SHA-256 seed commitments, entropy mixes, and game outcomes offline — no server trust required."
+        description="Verify any StellarCade round in your browser. Checks the oracle's revealed seed against the commitment it published before the bet, and recomputes the result with the random-generator contract's exact formula — no server trust required."
       >
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
             Quick-load test vectors
           </span>
-          {FAIRNESS_TEST_VECTORS.map((preset) => (
+          {ROUND_PRESETS.map((preset) => (
             <button
               key={preset.id}
               type="button"
@@ -200,82 +246,89 @@ function VerifyPageContent() {
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <SectionCard id="verifier-inputs-heading" icon={<Dices />} title="Round Proof Inputs">
-          <Field id="server-seed-input" label="Revealed Server Seed (Hex)" hint="Required">
+          {onChainState ? (
+            <p
+              data-testid="onchain-status"
+              className={cn(
+                "rounded-lg border px-3 py-2 text-xs",
+                onChainState.status === "error"
+                  ? "border-rose-400/30 text-rose-300"
+                  : "border-primary/30 text-muted-foreground",
+              )}
+            >
+              {onChainState.status === "loading"
+                ? "Loading the round from the random-generator contract…"
+                : onChainState.status === "ready"
+                  ? `Loaded round ${onChainState.requestId} from chain (get_result).`
+                  : `Could not load the round: ${onChainState.message}`}
+            </p>
+          ) : null}
+
+          <Field id="server-seed-input" label="Revealed Server Seed (32 bytes, hex)" hint="Required">
             <input
               id="server-seed-input"
               className={FIELD_CLASS}
               type="text"
-              placeholder="e.g. d9e87b92f..."
+              placeholder="64 hex characters"
               value={input.serverSeed}
               onChange={(e) => setInput({ ...input, serverSeed: e.target.value })}
               data-testid="input-server-seed"
             />
           </Field>
 
-          <Field
-            id="commit-hash-input"
-            label="Published Commitment Hash (SHA-256)"
-            hint="Optional · pre-bet hash"
-          >
+          <Field id="commit-hash-input" label="Seed Commitment (SHA-256, hex)" hint="Published before the bet">
             <input
               id="commit-hash-input"
               className={FIELD_CLASS}
               type="text"
-              placeholder="e.g. 0b15a6cfec..."
-              value={input.commitHash || ""}
-              onChange={(e) => setInput({ ...input, commitHash: e.target.value })}
+              placeholder="64 hex characters"
+              value={input.commitment}
+              onChange={(e) => setInput({ ...input, commitment: e.target.value })}
               data-testid="input-commit-hash"
             />
           </Field>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field id="client-seed-input" label="Client Seed">
+            <Field id="request-id-input" label="Request ID (game ID)">
               <input
-                id="client-seed-input"
+                id="request-id-input"
                 className={FIELD_CLASS}
                 type="text"
-                value={input.clientSeed}
-                onChange={(e) => setInput({ ...input, clientSeed: e.target.value })}
-                data-testid="input-client-seed"
+                inputMode="numeric"
+                value={input.requestId}
+                onChange={(e) => setInput({ ...input, requestId: e.target.value })}
+                data-testid="input-request-id"
               />
             </Field>
 
-            <Field id="nonce-input" label="Round Nonce">
+            <Field id="claimed-result-input" label="Claimed Result" hint="Optional">
               <input
-                id="nonce-input"
+                id="claimed-result-input"
                 className={FIELD_CLASS}
                 type="text"
-                value={String(input.nonce)}
-                onChange={(e) => setInput({ ...input, nonce: e.target.value })}
-                data-testid="input-nonce"
+                inputMode="numeric"
+                value={input.claimedResult}
+                onChange={(e) => setInput({ ...input, claimedResult: e.target.value })}
+                data-testid="input-claimed-result"
               />
             </Field>
           </div>
 
-          <Field id="ledger-hash-input" label="Stellar Ledger Hash">
-            <input
-              id="ledger-hash-input"
-              className={FIELD_CLASS}
-              type="text"
-              placeholder="e.g. 4b6c317db..."
-              value={input.ledgerHash}
-              onChange={(e) => setInput({ ...input, ledgerHash: e.target.value })}
-              data-testid="input-ledger-hash"
-            />
-          </Field>
-
-          <Field id="game-range-select" label="Game Outcome Space">
+          <Field id="game-range-select" label="Outcome Space (max)">
             <select
               id="game-range-select"
               className={cn(FIELD_CLASS, "font-sans")}
-              value={input.rangeSize || 2}
-              onChange={(e) => setInput({ ...input, rangeSize: Number(e.target.value) })}
+              value={input.max}
+              onChange={(e) => setInput({ ...input, max: e.target.value })}
               data-testid="select-game-range"
             >
-              <option value={2}>Coin Flip (2 outcomes: Heads / Tails)</option>
-              <option value={6}>Dice Roll (6 outcomes: 1 to 6)</option>
-              <option value={100}>Number Guess / Percentile (100 outcomes: 1 to 100)</option>
-              <option value={37}>Roulette (37 outcomes: 0 to 36)</option>
+              <option value="2">Coin Flip (2 outcomes: Heads / Tails)</option>
+              <option value="6">6 outcomes</option>
+              <option value="37">37 outcomes</option>
+              <option value="100">100 outcomes</option>
+              {["2", "6", "37", "100"].includes(input.max) ? null : (
+                <option value={input.max}>{input.max} outcomes</option>
+              )}
             </select>
           </Field>
 
@@ -328,8 +381,8 @@ function VerifyPageContent() {
                   )}
                   <p className="mt-1 text-xs text-muted-foreground">
                     {result.isValid
-                      ? "All seed commitments match and the outcome is cryptographically authentic."
-                      : "The revealed seed material does not match the published commitments."}
+                      ? "The seed matches its commitment and the result follows from the contract's formula."
+                      : "One or more checks failed — see the failed steps below."}
                   </p>
                 </div>
               </div>
@@ -345,15 +398,15 @@ function VerifyPageContent() {
                   data-testid="outcome-value-text"
                   className="font-mono text-2xl font-bold text-primary"
                 >
-                  {result.gameLabel}
+                  {result.outcomeLabel}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  Modulo mapped from 256-bit entropy digest
+                  sha256(server_seed || request_id) first 8 bytes, mod max
                 </span>
               </div>
 
               <ol className="flex flex-col gap-2.5">
-                {result.steps.map((step, idx) => (
+                {result.checks.map((step, idx) => (
                   <li
                     key={idx}
                     data-testid={`step-item-${idx}`}
