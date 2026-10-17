@@ -1,6 +1,6 @@
 use super::*;
 use soroban_sdk::{
-    testutils::Address as _,
+    testutils::{Address as _, Ledger},
     token::{StellarAssetClient, TokenClient},
     Address, BytesN, Env,
 };
@@ -186,7 +186,8 @@ fn test_resolve_loss() {
     s.flip_client.place_bet(&player, &HEADS, &100, &game_id);
 
     let losing_seed = seed(&env, 0);
-    s.rng_client.fulfill_random(&s.oracle, &game_id, &losing_seed);
+    s.rng_client
+        .fulfill_random(&s.oracle, &game_id, &losing_seed);
     s.flip_client.resolve_bet(&game_id);
 
     let game = s.flip_client.get_game(&game_id);
@@ -528,7 +529,10 @@ fn test_insufficient_house_liquidity_rejected() {
     let mut commitments = soroban_sdk::Vec::new(&env);
     commitments.push_back(
         env.crypto()
-            .sha256(&soroban_sdk::Bytes::from_slice(&env, &seed(&env, 0).to_array()))
+            .sha256(&soroban_sdk::Bytes::from_slice(
+                &env,
+                &seed(&env, 0).to_array(),
+            ))
             .into(),
     );
     rng_client.commit_seeds(&oracle, &commitments);
@@ -569,7 +573,10 @@ fn test_exact_house_liquidity_accepted() {
     let mut commitments = soroban_sdk::Vec::new(&env);
     commitments.push_back(
         env.crypto()
-            .sha256(&soroban_sdk::Bytes::from_slice(&env, &seed(&env, 0).to_array()))
+            .sha256(&soroban_sdk::Bytes::from_slice(
+                &env,
+                &seed(&env, 0).to_array(),
+            ))
             .into(),
     );
     rng_client.commit_seeds(&oracle, &commitments);
@@ -605,7 +612,9 @@ fn test_withdraw_house_below_liability_rejected() {
 
     // Withdrawing more than (balance - liability) must fail
     let excessive_withdrawal = balance - liability + 1;
-    let res = s.flip_client.try_withdraw_house(&s.admin, &excessive_withdrawal);
+    let res = s
+        .flip_client
+        .try_withdraw_house(&s.admin, &excessive_withdrawal);
     assert_eq!(res, Err(Ok(Error::InsufficientHouseLiquidity)));
 
     // Withdrawing within safe margin succeeds
@@ -653,4 +662,211 @@ fn test_non_admin_fund_and_withdraw_rejected() {
 
     let withdraw_res = s.flip_client.try_withdraw_house(&impostor, &100i128);
     assert_eq!(withdraw_res, Err(Ok(Error::NotAuthorized)));
+}
+
+// -------------------------------------------------------------------
+// Stale bet refunds (#1384)
+// -------------------------------------------------------------------
+
+const PLACED_AT: u32 = 1_000;
+
+/// Place a 100-token Heads bet at ledger `PLACED_AT` for a fresh player
+/// holding 500 tokens. Returns the player.
+fn place_stale_candidate(env: &Env, s: &Setup, game_id: u64) -> Address {
+    env.ledger().set_sequence_number(PLACED_AT);
+    let player = Address::generate(env);
+    s.token_sac.mint(&player, &500i128);
+    s.flip_client.place_bet(&player, &HEADS, &100i128, &game_id);
+    player
+}
+
+fn advance_past_timeout(env: &Env) {
+    env.ledger()
+        .set_sequence_number(PLACED_AT + DEFAULT_REFUND_TIMEOUT_LEDGERS);
+}
+
+#[test]
+fn test_place_bet_records_placed_at_ledger() {
+    let env = Env::default();
+    let s = setup(&env);
+    place_stale_candidate(&env, &s, 1u64);
+
+    let game = s.flip_client.get_game(&1u64);
+    assert_eq!(game.placed_at_ledger, PLACED_AT);
+    assert!(!game.refunded);
+}
+
+#[test]
+fn test_cancel_before_timeout_rejected() {
+    let env = Env::default();
+    let s = setup(&env);
+    let player = place_stale_candidate(&env, &s, 1u64);
+    let contract_before = s.flip_client.house_balance();
+
+    // One ledger short of the timeout.
+    env.ledger()
+        .set_sequence_number(PLACED_AT + DEFAULT_REFUND_TIMEOUT_LEDGERS - 1);
+    let res = s.flip_client.try_cancel_stale_bet(&player, &1u64);
+    assert_eq!(res, Err(Ok(Error::RefundNotYetAvailable)));
+
+    let game = s.flip_client.get_game(&1u64);
+    assert!(!game.resolved);
+    assert!(!game.refunded);
+    assert_eq!(tc(&env, &s.token_addr).balance(&player), 400i128);
+    assert_eq!(s.flip_client.house_balance(), contract_before);
+    assert_eq!(s.flip_client.house_exposure_snapshot().active_game_count, 1);
+}
+
+#[test]
+fn test_cancel_after_timeout_refunds_wager() {
+    let env = Env::default();
+    let s = setup(&env);
+    let player = place_stale_candidate(&env, &s, 1u64);
+    let contract_before = s.flip_client.house_balance();
+    assert_eq!(tc(&env, &s.token_addr).balance(&player), 400i128);
+
+    let snap = s.flip_client.house_exposure_snapshot();
+    assert_eq!(snap.active_game_count, 1);
+    assert_eq!(snap.total_wagered, 100);
+
+    advance_past_timeout(&env);
+    s.flip_client.cancel_stale_bet(&player, &1u64);
+
+    // Exact wager returned to the player, taken from the contract.
+    assert_eq!(tc(&env, &s.token_addr).balance(&player), 500i128);
+    assert_eq!(s.flip_client.house_balance(), contract_before - 100);
+
+    let game = s.flip_client.get_game(&1u64);
+    assert!(game.resolved);
+    assert!(game.refunded);
+    assert!(!game.won);
+    assert_eq!(game.payout, 0);
+
+    let snap = s.flip_client.house_exposure_snapshot();
+    assert_eq!(snap.active_game_count, 0);
+    assert_eq!(snap.total_wagered, 0);
+    assert_eq!(snap.max_payout_liability, 0);
+
+    // A second cancel cannot refund again.
+    let res = s.flip_client.try_cancel_stale_bet(&player, &1u64);
+    assert_eq!(res, Err(Ok(Error::GameRefunded)));
+    assert_eq!(tc(&env, &s.token_addr).balance(&player), 500i128);
+}
+
+#[test]
+fn test_cancel_reduces_exposure_only_for_cancelled_game() {
+    let env = Env::default();
+    let s = setup(&env);
+    let player = place_stale_candidate(&env, &s, 1u64);
+    let other = Address::generate(&env);
+    s.token_sac.mint(&other, &500i128);
+    s.flip_client.place_bet(&other, &TAILS, &200i128, &2u64);
+
+    advance_past_timeout(&env);
+    s.flip_client.cancel_stale_bet(&player, &1u64);
+
+    let snap = s.flip_client.house_exposure_snapshot();
+    assert_eq!(snap.active_game_count, 1);
+    assert_eq!(snap.total_wagered, 200);
+}
+
+#[test]
+fn test_resolve_after_refund_rejected_even_if_rng_fulfilled() {
+    let env = Env::default();
+    let s = setup(&env);
+    let player = place_stale_candidate(&env, &s, 1u64);
+
+    advance_past_timeout(&env);
+    s.flip_client.cancel_stale_bet(&player, &1u64);
+    assert_eq!(tc(&env, &s.token_addr).balance(&player), 500i128);
+    let contract_after_refund = s.flip_client.house_balance();
+
+    // The oracle fulfills late with seed(0), which wins for Heads on game 1.
+    s.rng_client
+        .fulfill_random(&s.oracle, &1u64, &seed(&env, 0));
+    assert_eq!(s.rng_client.get_result(&1u64).result, HEADS as u64);
+
+    let res = s.flip_client.try_resolve_bet(&1u64);
+    assert_eq!(res, Err(Ok(Error::GameRefunded)));
+
+    // No payout on top of the refund.
+    assert_eq!(tc(&env, &s.token_addr).balance(&player), 500i128);
+    assert_eq!(s.flip_client.house_balance(), contract_after_refund);
+    let game = s.flip_client.get_game(&1u64);
+    assert!(game.refunded);
+    assert!(!game.won);
+    assert_eq!(game.payout, 0);
+}
+
+#[test]
+fn test_cancel_resolved_game_rejected() {
+    let env = Env::default();
+    let s = setup(&env);
+    let player = place_stale_candidate(&env, &s, 1u64);
+
+    // seed(0) wins for Heads on game 1: payout 198.
+    s.rng_client
+        .fulfill_random(&s.oracle, &1u64, &seed(&env, 0));
+    s.flip_client.resolve_bet(&1u64);
+    assert_eq!(tc(&env, &s.token_addr).balance(&player), 598i128);
+
+    advance_past_timeout(&env);
+    let res = s.flip_client.try_cancel_stale_bet(&player, &1u64);
+    assert_eq!(res, Err(Ok(Error::GameAlreadyResolved)));
+    assert_eq!(tc(&env, &s.token_addr).balance(&player), 598i128);
+    assert!(!s.flip_client.get_game(&1u64).refunded);
+}
+
+#[test]
+fn test_cancel_rejected_when_rng_fulfilled_but_unresolved() {
+    let env = Env::default();
+    let s = setup(&env);
+    let player = place_stale_candidate(&env, &s, 1u64);
+
+    s.rng_client
+        .fulfill_random(&s.oracle, &1u64, &seed(&env, 0));
+    advance_past_timeout(&env);
+
+    let res = s.flip_client.try_cancel_stale_bet(&player, &1u64);
+    assert_eq!(res, Err(Ok(Error::RefundNotYetAvailable)));
+    assert_eq!(tc(&env, &s.token_addr).balance(&player), 400i128);
+    assert!(!s.flip_client.get_game(&1u64).refunded);
+
+    // The game can still be settled normally.
+    s.flip_client.resolve_bet(&1u64);
+    assert_eq!(tc(&env, &s.token_addr).balance(&player), 598i128);
+}
+
+#[test]
+fn test_cancel_by_non_player_rejected() {
+    let env = Env::default();
+    let s = setup(&env);
+    let player = place_stale_candidate(&env, &s, 1u64);
+    advance_past_timeout(&env);
+
+    let attacker = Address::generate(&env);
+    let res = s.flip_client.try_cancel_stale_bet(&attacker, &1u64);
+    assert_eq!(res, Err(Ok(Error::NotAuthorized)));
+
+    assert_eq!(tc(&env, &s.token_addr).balance(&attacker), 0i128);
+    assert_eq!(tc(&env, &s.token_addr).balance(&player), 400i128);
+    let game = s.flip_client.get_game(&1u64);
+    assert!(!game.resolved);
+    assert!(!game.refunded);
+}
+
+#[test]
+fn test_cancel_without_player_auth_rejected() {
+    let env = Env::default();
+    let s = setup(&env);
+    let player = place_stale_candidate(&env, &s, 1u64);
+    advance_past_timeout(&env);
+
+    // Drop the blanket auth mock: the player's signature is now missing.
+    env.set_auths(&[]);
+    let res = s.flip_client.try_cancel_stale_bet(&player, &1u64);
+    assert!(res.is_err());
+
+    assert_eq!(tc(&env, &s.token_addr).balance(&player), 400i128);
+    assert!(!s.flip_client.get_game(&1u64).refunded);
 }
