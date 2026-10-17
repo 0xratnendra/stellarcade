@@ -9,14 +9,37 @@ const TransactionModel = {
    * Creates a transaction row.
    *
    * @param {Object} transactionData
+   * @param {Object} [trx]
    * @returns {Promise<Object|null>}
    */
-  async create(transactionData) {
+  async create(transactionData, trx = null) {
     try {
-      const rows = await db('transactions').insert(transactionData).returning('*');
+      const q = trx ? trx('transactions') : db('transactions');
+      const rows = await q.insert(transactionData).returning('*');
       return rows[0] || null;
     } catch (error) {
       logger.error('Error in TransactionModel.create:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Finds a single transaction by tx_hash.
+   *
+   * @param {string} txHash
+   * @param {string} [type]
+   * @returns {Promise<Object|null>}
+   */
+  async findByTxHash(txHash, type) {
+    try {
+      const query = db('transactions').where({ tx_hash: txHash });
+      if (type) {
+        query.where({ type });
+      }
+      const transaction = await query.first();
+      return transaction || null;
+    } catch (error) {
+      logger.error('Error in TransactionModel.findByTxHash:', error);
       throw error;
     }
   },

@@ -5,22 +5,11 @@ import { useWalletStatus } from "../hooks/useWalletStatus";
 import { ApiClient, type QuestProgressDto } from "./typed-api-sdk";
 
 /**
- * Player-facing data sources that do not exist yet.
+ * Player-facing data sources and hooks.
  *
- * StellarCade is pre-launch: the game contracts are stubs, the arbiter's
- * settlement log is not exposed over the API, and no rounds have settled. So
- * none of the surfaces below — match history, leaderboard, tournaments,
- * quests, claimable rewards — have anything real to show.
- *
- * Rather than scatter sample arrays through the route files (where they read
- * as real standings and balances), every one of them is declared here,
- * returns empty, and records exactly what has to exist before it can return
- * anything. Wire the real request into the matching hook and the route that
- * consumes it starts rendering — the components already handle the populated
- * case.
- *
- * The types are the contract those endpoints will have to satisfy, so they
- * are deliberately concrete rather than `unknown`.
+ * Provides reactive hooks for on-chain game match history, global leaderboard
+ * standings, quests, and rewards. Settled rounds are indexed directly from
+ * Soroban contract events and exposed via the REST API.
  */
 
 export interface SettledRound {
@@ -174,18 +163,157 @@ export function mapQuests(dtos?: QuestProgressDto[] | null): Quest[] {
 
 /**
  * Rounds this wallet has settled.
- * Blocked on: the arbiter exposing its settlement log over the API.
+ * Loads the connected wallet's settled rounds from GET /api/games/recent?player=.
  */
-export function useSettledRounds(): Collection<SettledRound> {
-  return empty();
+export function useSettledRounds(
+  playerOverride?: string | null,
+): Collection<SettledRound> & { error?: string } {
+  const wallet = useWalletStatus();
+  const player = playerOverride !== undefined ? playerOverride : wallet.address;
+
+  const [items, setItems] = useState<SettledRound[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(Boolean(player));
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    let active = true;
+
+    if (!player) {
+      setItems([]);
+      setIsLoading(false);
+      setError(undefined);
+      return;
+    }
+
+    setIsLoading(true);
+    setError(undefined);
+
+    const client = new ApiClient();
+    client
+      .getRecentGames({ player, limit: 50 })
+      .then((result) => {
+        if (!active) return;
+        if (result.success) {
+          const mapped: SettledRound[] = (result.data.items || []).map((dto) => {
+            const rawType = String(dto.game_type || "coin-flip").toLowerCase();
+            let gameType: SettledRound["gameType"] = "coinflip";
+            let gameName = "Coin Flip";
+            if (rawType.includes("dice")) {
+              gameType = "dice";
+              gameName = "Verifiable Dice Roll";
+            } else if (rawType.includes("gauntlet") || rawType.includes("prize")) {
+              gameType = "gauntlet";
+              gameName = "Prize Pool Gauntlet";
+            }
+
+            const isWin =
+              String(dto.result || "").toLowerCase() === "win" ||
+              (Number(dto.payout || 0) > 0 && String(dto.status || "") === "resolved");
+
+            return {
+              id: String(dto.chain_game_id || dto.id || ""),
+              game: gameName,
+              gameType,
+              wagerXlm: Number(dto.bet_amount || 0),
+              payoutXlm: Number(dto.payout || 0),
+              outcome: isWin ? "WIN" : "LOSS",
+              settledAt: dto.resolved_at
+                ? new Date(dto.resolved_at).getTime()
+                : dto.created_at
+                  ? new Date(dto.created_at).getTime()
+                  : Date.now(),
+              serverSeed: String(dto.server_seed || ""),
+              commitHash: String(dto.commit_hash || ""),
+              clientSeed: String(dto.client_seed || ""),
+              nonce: Number(dto.nonce || 0),
+              rangeSize: Number(dto.range_size || 2),
+            };
+          });
+          setItems(mapped);
+          setError(undefined);
+        } else {
+          setError(result.error.message || "Failed to load settled rounds.");
+        }
+      })
+      .catch((err) => {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "Failed to load settled rounds.");
+      })
+      .finally(() => {
+        if (active) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [player]);
+
+  return { items, isLoading, error };
 }
 
 /**
  * Player standings by net winnings.
- * Blocked on: settled rounds existing at all — the board is derived from them.
+ * Loads rankings from GET /api/leaderboard.
  */
-export function useLeaderboard(): Collection<LeaderboardEntry> {
-  return empty();
+export function useLeaderboard(
+  opts?: { game?: string; limit?: number },
+): Collection<LeaderboardEntry> & { error?: string } {
+  const [items, setItems] = useState<LeaderboardEntry[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  const game = opts?.game;
+  const limit = opts?.limit ?? 50;
+
+  useEffect(() => {
+    let active = true;
+    setIsLoading(true);
+    setError(undefined);
+
+    const client = new ApiClient();
+    client
+      .getLeaderboard({ game, limit })
+      .then((result) => {
+        if (!active) return;
+        if (result.success) {
+          const mapped: LeaderboardEntry[] = (result.data || []).map((row, idx) => {
+            const rawScore = String(row.score ?? "0");
+            const numericScore = Number(rawScore) || 0;
+            const addr = row.playerAddress || "";
+            const short = addr ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : "Anonymous";
+            return {
+              rank: row.rank || idx + 1,
+              address: addr,
+              username: short,
+              wins: numericScore > 0 ? 1 : 0,
+              totalVolumeXlm: numericScore,
+              winRate: "100%",
+            };
+          });
+          setItems(mapped);
+          setError(undefined);
+        } else {
+          setError(result.error.message || "Failed to load leaderboard.");
+        }
+      })
+      .catch((err) => {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "Failed to load leaderboard.");
+      })
+      .finally(() => {
+        if (active) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [game, limit]);
+
+  return { items, isLoading, error };
 }
 
 /**

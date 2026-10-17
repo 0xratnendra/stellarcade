@@ -404,11 +404,116 @@ const assertWalletNetwork = ({ walletNetwork, expectedNetwork }) => {
   }
 };
 
+/**
+ * Verifies that a deposit payment exists, succeeded, and matches expected criteria on Horizon.
+ *
+ * @param {Object} params
+ * @param {string} params.txHash - 64-character hex transaction hash
+ * @param {string} params.expectedSource - Sender Stellar account (G...)
+ * @param {string} params.expectedVault - Recipient vault Stellar account (G...)
+ * @param {string} [params.expectedAsset='XLM'] - Asset code expected ('XLM' or asset code)
+ * @returns {Promise<{ valid: boolean, amount: string, numericAmount: number, asset: string, txHash: string, ledger: number }>}
+ */
+const verifyDepositPayment = async ({
+  txHash,
+  expectedSource,
+  expectedVault,
+  expectedAsset = 'XLM',
+}) => {
+  if (!txHash || typeof txHash !== 'string' || !/^[0-9a-fA-F]{64}$/.test(txHash.trim())) {
+    const error = new Error('Invalid transaction hash format. Expected 64 hex characters.');
+    error.statusCode = 400;
+    error.code = 'INVALID_TX_HASH';
+    throw error;
+  }
+
+  const cleanTxHash = txHash.trim().toLowerCase();
+
+  let tx;
+  try {
+    tx = await server.transactions().transaction(cleanTxHash).call();
+  } catch (err) {
+    if (err instanceof StellarSdk.NotFoundError || err?.response?.status === 404) {
+      const error = new Error(`Transaction ${cleanTxHash} not found on network.`);
+      error.statusCode = 404;
+      error.code = 'TX_NOT_FOUND';
+      throw error;
+    }
+    const parsed = parseHorizonError(err);
+    const error = new Error(parsed.message || 'Failed to fetch transaction from Horizon.');
+    error.statusCode = parsed.httpStatus && parsed.httpStatus < 500 ? parsed.httpStatus : 502;
+    error.code = parsed.code || 'HORIZON_ERROR';
+    throw error;
+  }
+
+  if (!tx.successful) {
+    const error = new Error('Deposit transaction was not successful on-chain.');
+    error.statusCode = 400;
+    error.code = 'TX_FAILED';
+    throw error;
+  }
+
+  let operationsResponse;
+  try {
+    operationsResponse = await server.operations().forTransaction(cleanTxHash).call();
+  } catch (err) {
+    const parsed = parseHorizonError(err);
+    const error = new Error(parsed.message || 'Failed to fetch operations for transaction.');
+    error.statusCode = parsed.httpStatus && parsed.httpStatus < 500 ? parsed.httpStatus : 502;
+    error.code = parsed.code || 'HORIZON_ERROR';
+    throw error;
+  }
+
+  const operations = operationsResponse.records || [];
+  const normalizedExpectedAsset = (expectedAsset || 'XLM').toUpperCase();
+
+  const matchingOp = operations.find((op) => {
+    if (op.type !== 'payment') return false;
+    if (op.to !== expectedVault) return false;
+
+    const opSource = op.from || op.source_account || tx.source_account;
+    if (opSource !== expectedSource) return false;
+
+    if (normalizedExpectedAsset === 'XLM' || normalizedExpectedAsset === 'NATIVE') {
+      return op.asset_type === 'native';
+    } else {
+      return (op.asset_code || '').toUpperCase() === normalizedExpectedAsset;
+    }
+  });
+
+  if (!matchingOp) {
+    const error = new Error(
+      `No matching payment operation found in transaction for vault ${expectedVault} from ${expectedSource}.`
+    );
+    error.statusCode = 400;
+    error.code = 'PAYMENT_OP_NOT_FOUND';
+    throw error;
+  }
+
+  const numericAmount = parseFloat(matchingOp.amount);
+  if (Number.isNaN(numericAmount) || numericAmount <= 0) {
+    const error = new Error('Invalid payment amount in transaction operation.');
+    error.statusCode = 400;
+    error.code = 'INVALID_PAYMENT_AMOUNT';
+    throw error;
+  }
+
+  return {
+    valid: true,
+    amount: matchingOp.amount,
+    numericAmount,
+    asset: matchingOp.asset_type === 'native' ? 'XLM' : matchingOp.asset_code,
+    txHash: cleanTxHash,
+    ledger: tx.ledger_attr || tx.ledger || 0,
+  };
+};
+
 module.exports = {
   submitTransaction,
   submitTransactionAsync,
   assertWalletNetwork,
   getAccountBalances,
+  verifyDepositPayment,
   STELLAR_ERRORS,
   NetworkMismatchError,
   // exported for testing only

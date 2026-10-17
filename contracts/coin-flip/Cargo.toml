@@ -6,10 +6,10 @@ publish = false
 
 [dependencies]
 soroban-sdk = "25.0.2"
-stellarcade-random-generator = { path = "../random-generator" }
 
 [dev-dependencies]
 soroban-sdk = { version = "25.0.2", features = ["testutils"] }
+stellarcade-random-generator = { path = "../random-generator" }
 
 [lib]
 crate-type = ["cdylib", "rlib"]

@@ -32,7 +32,7 @@ const getRecentGames = async (req, res, next) => {
       throw error;
     }
 
-    const { gameType, status, sortBy, sortDir } = req.query;
+    const { gameType, status, sortBy, sortDir, player } = req.query;
 
     const result = await gameService.getRecentGames({
       page,
@@ -42,6 +42,7 @@ const getRecentGames = async (req, res, next) => {
       status,
       sortBy,
       sortDir,
+      player,
     });
 
     res.status(200).json(result);

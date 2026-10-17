@@ -83,7 +83,7 @@ const GameModel = {
    * @param {string} [params.sortDir] - Sort direction (asc/desc)
    * @returns {Promise<{items: Array, total: number, page: number, pageSize: number}>}
    */
-  async findRecent({ page = 1, limit = 10, gameType, status, sortBy, sortDir }) {
+  async findRecent({ page = 1, limit = 10, gameType, status, sortBy, sortDir, player }) {
     try {
       const safePage = Math.max(Number(page) || 1, 1);
       const safeLimit = Math.max(Number(limit) || 10, 1);
@@ -108,6 +108,12 @@ const GameModel = {
 
       if (status) {
         query.where('result', status);
+      }
+
+      if (player) {
+        query.where((builder) => {
+          builder.where('users.wallet_address', player).orWhere('games.player_address', player);
+        });
       }
 
       const countQuery = query.clone().clearSelect().clearOrder().count('* as total').first();
