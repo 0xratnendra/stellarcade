@@ -32,12 +32,22 @@ const getRecentGames = async (req, res, next) => {
       throw error;
     }
 
-    const { gameType, status, sortBy, sortDir } = req.query;
+    const { player, gameType, status, sortBy, sortDir } = req.query;
+
+    if (player !== undefined) {
+      if (typeof player !== 'string' || !/^[G][A-Z2-7]{55}$/.test(player)) {
+        const error = new Error('Query parameter "player" must be a valid Stellar address.');
+        error.statusCode = 400;
+        error.code = 'INVALID_PLAYER_ADDRESS';
+        throw error;
+      }
+    }
 
     const result = await gameService.getRecentGames({
       page,
       limit,
       cursor: cursor === undefined ? undefined : String(cursor),
+      player,
       gameType,
       status,
       sortBy,
@@ -54,7 +64,8 @@ const getLeaderboard = async (req, res, next) => {
   try {
     const rawLimit = req.query.limit;
     const parsedLimit = rawLimit === undefined ? 10 : parseInt(rawLimit, 10);
-    const limit = Number.isNaN(parsedLimit) || parsedLimit < 1 ? 10 : parsedLimit;
+    let limit = Number.isNaN(parsedLimit) || parsedLimit < 1 ? 10 : parsedLimit;
+    limit = Math.min(limit, 100);
 
     const result = await gameService.getLeaderboard({
       gameType: req.query.game,
