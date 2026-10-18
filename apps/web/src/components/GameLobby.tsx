@@ -29,14 +29,7 @@ import { useWalletStatus } from "../hooks/useWalletStatus";
 import { ApiClient, ONCHAIN_GAMES_CATALOG } from "../services/typed-api-sdk";
 import defaultFreighterAdapter from "../services/freighter-adapter";
 import Drawer from "./Drawer";
-import { CoinFlipSide } from "../types/contracts/coinFlip";
-import {
-  CoinFlipBetError,
-  getCoinFlipConfig,
-  placeBet,
-  stroopsToXlm,
-} from "../services/coin-flip-client";
-import { useCoinFlipGame } from "../hooks/useCoinFlipGame";
+import CoinFlipPlayPanel from "./CoinFlipPlayPanel";
 import GlobalStateStore, {
   getTableDensityPreference,
   ONBOARDING_CHECKLIST_DISMISSED_FLAG,
@@ -249,12 +242,6 @@ export const GameLobby: React.FC = () => {
   );
 
   const [activePlayGame, setActivePlayGame] = useState<Game | null>(null);
-  const [playWager, setPlayWager] = useState<number>(5);
-  const [playSide, setPlaySide] = useState<CoinFlipSide>(CoinFlipSide.Heads);
-  const [isExecutingPlay, setIsExecutingPlay] = useState<boolean>(false);
-  const [placedBet, setPlacedBet] = useState<{ gameId: bigint; txHash: string } | null>(null);
-  const [betError, setBetError] = useState<string | null>(null);
-  const liveGame = useCoinFlipGame(placedBet?.gameId ?? null);
 
   const fetchGames = useCallback(async () => {
     try {
@@ -282,57 +269,7 @@ export const GameLobby: React.FC = () => {
 
   const handleStartPlay = useCallback((game: Game) => {
     setActivePlayGame(game);
-    setPlacedBet(null);
-    setBetError(null);
   }, []);
-
-  const handleExecutePlay = useCallback(async () => {
-    if (!activePlayGame) return;
-    if (!wallet.capabilities.isConnected) {
-      // Bare connect() installs no provider (useWalletStatus only wires one
-      // up when passed explicitly) — same bug fixed for the header's wallet
-      // control (see HeaderWalletControl.tsx).
-      await wallet.connect(defaultFreighterAdapter);
-      return;
-    }
-
-    // The contract lives on one network; refuse to sign anywhere else.
-    let networkPassphrase: string;
-    try {
-      networkPassphrase = getCoinFlipConfig().networkPassphrase;
-    } catch (configError) {
-      setBetError(configError instanceof Error ? configError.message : String(configError));
-      return;
-    }
-    const networkCheck = isSupportedNetwork(wallet.network, {
-      supportedNetworks: [networkPassphrase],
-    });
-    if (!networkCheck.isSupported || !wallet.address) {
-      setBetError(
-        `Switch Freighter to ${networkCheck.supportedNetworks.join(" / ")} to place a bet.`,
-      );
-      return;
-    }
-
-    setBetError(null);
-    setIsExecutingPlay(true);
-    try {
-      const placed = await placeBet({
-        player: wallet.address,
-        side: playSide === CoinFlipSide.Heads ? 0 : 1,
-        wagerXlm: String(playWager),
-      });
-      setPlacedBet(placed);
-    } catch (placeError) {
-      setBetError(
-        placeError instanceof CoinFlipBetError
-          ? placeError.message
-          : "Could not place the bet. Please try again.",
-      );
-    } finally {
-      setIsExecutingPlay(false);
-    }
-  }, [activePlayGame, playSide, playWager, wallet]);
 
   useEffect(() => {
     const run = async () => {
@@ -1253,173 +1190,7 @@ export const GameLobby: React.FC = () => {
                 : "Instant on-chain duel backed by Stellar smart contract and SHA-256 commit-reveal."}
             </p>
 
-            {placedBet ? (
-              <div>
-                <div
-                  className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-slate-200"
-                  data-testid="coinflip-live-result"
-                  aria-live="polite"
-                >
-                  {liveGame.status === "resolved" && liveGame.game ? (
-                    liveGame.game.refunded ? (
-                      <p className="font-bold" data-testid="coinflip-outcome">
-                        Bet refunded: {stroopsToXlm(liveGame.game.wager)} XLM returned
-                      </p>
-                    ) : (
-                      <>
-                        <p className="font-bold" data-testid="coinflip-outcome">
-                          {/* The coin landed on the player's side iff they won. */}
-                          Landed on{" "}
-                          {(liveGame.game.won ? liveGame.game.side : 1 - liveGame.game.side) === 0
-                            ? "Heads"
-                            : "Tails"}{" "}
-                          · {liveGame.game.won ? "You won" : "You lost"}
-                        </p>
-                        <p className="mt-1">
-                          Payout: {stroopsToXlm(liveGame.game.payout)} XLM (wager{" "}
-                          {stroopsToXlm(liveGame.game.wager)} XLM)
-                        </p>
-                      </>
-                    )
-                  ) : liveGame.status === "timeout" ? (
-                    <p className="font-bold" data-testid="coinflip-outcome">
-                      Still waiting for the oracle to fulfil this round…
-                    </p>
-                  ) : liveGame.status === "error" ? (
-                    <p className="font-bold text-rose-300" data-testid="coinflip-outcome">
-                      Couldn&apos;t read the game state: {liveGame.error}
-                    </p>
-                  ) : (
-                    <p className="font-bold" data-testid="coinflip-outcome">
-                      Bet placed · waiting for the result…
-                    </p>
-                  )}
-                  <p className="mt-2 break-all font-mono text-xs text-slate-400">
-                    Game ID: {placedBet.gameId.toString()}
-                  </p>
-                  <ul className="mt-2 flex flex-col gap-1 text-xs">
-                    <li>
-                      <a
-                        href={`https://stellar.expert/explorer/testnet/tx/${placedBet.txHash}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-sky-300 underline"
-                      >
-                        Bet transaction
-                      </a>
-                    </li>
-                    {liveGame.resolveTxHash ? (
-                      <li>
-                        <a
-                          href={`https://stellar.expert/explorer/testnet/tx/${liveGame.resolveTxHash}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-sky-300 underline"
-                        >
-                          Resolution transaction
-                        </a>
-                      </li>
-                    ) : null}
-                    {liveGame.status === "resolved" && !liveGame.game?.refunded ? (
-                      <li>
-                        <a
-                          href={`/verify?requestId=${placedBet.gameId.toString()}`}
-                          className="text-sky-300 underline"
-                          data-testid="coinflip-verify-link"
-                        >
-                          Verify this round
-                        </a>
-                      </li>
-                    ) : null}
-                  </ul>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setPlacedBet(null)}
-                  className="stellarcade-btn stellarcade-btn-primary w-full mt-4"
-                  data-testid="btn-play-again"
-                >
-                  Play Another Round
-                </button>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-4">
-                <div>
-                  <label className="block text-xs font-semibold mb-2 text-slate-300">
-                    Choose Your Pick:
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setPlaySide(CoinFlipSide.Heads)}
-                      className={`p-3 rounded-lg border font-bold transition-all ${
-                        playSide === CoinFlipSide.Heads
-                          ? "border-sky-400 bg-sky-400/15 text-white"
-                          : "border-white/10 bg-transparent text-slate-300 hover:border-white/20"
-                      }`}
-                      data-testid="btn-pick-heads"
-                    >
-                      🪙 Heads
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPlaySide(CoinFlipSide.Tails)}
-                      className={`p-3 rounded-lg border font-bold transition-all ${
-                        playSide === CoinFlipSide.Tails
-                          ? "border-sky-400 bg-sky-400/15 text-white"
-                          : "border-white/10 bg-transparent text-slate-300 hover:border-white/20"
-                      }`}
-                      data-testid="btn-pick-tails"
-                    >
-                      🪙 Tails
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold mb-2 text-slate-300">
-                    Wager Amount (XLM):
-                  </label>
-                  <div className="grid grid-cols-4 gap-2">
-                    {[5, 10, 25, 50].map((w) => (
-                      <button
-                        key={w}
-                        type="button"
-                        onClick={() => setPlayWager(w)}
-                        className={`p-2 rounded-lg border text-xs font-semibold transition-all ${
-                          playWager === w
-                            ? "border-sky-400 bg-sky-400/15 text-white"
-                            : "border-white/10 bg-transparent text-slate-300 hover:border-white/20"
-                        }`}
-                      >
-                        {w} XLM
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="mt-2">
-                  {betError ? (
-                    <p role="alert" className="mb-2 text-sm text-rose-300" data-testid="bet-error">
-                      {betError}
-                    </p>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={handleExecutePlay}
-                    disabled={isExecutingPlay}
-                    className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-sky-400 to-teal-400 text-black font-bold text-base shadow-lg shadow-sky-400/20 hover:brightness-110 active:translate-y-0 disabled:opacity-70 disabled:cursor-not-allowed transition-all"
-                    data-testid="btn-confirm-bet"
-                  >
-                    {isExecutingPlay
-                      ? "🎲 Placing bet on Soroban..."
-                      : !wallet.capabilities.isConnected
-                      ? "Connect Wallet & Play"
-                      : `Place ${playWager} XLM Bet`}
-                  </button>
-                </div>
-              </div>
-            )}
+            <CoinFlipPlayPanel />
           </div>
         )}
       </Drawer>
