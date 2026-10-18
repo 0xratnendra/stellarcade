@@ -121,7 +121,7 @@ pub fn request_random(env: Env, caller: Address, request_id: u64, max: u64) -> R
 Fulfill a pending randomness request. Oracle only.  The result is derived as: `sha256(server_seed || request_id_be_bytes)[0..8] % max`  Enforces that `sha256(server_seed) == pending.commitment`, proving the seed was committed on-chain before the request was created. Both `server_seed`, `commitment` and `result` are persisted for on-chain verification.
 
 ```rust
-pub fn fulfill_random(env: Env, oracle: Address, request_id: u64, server_seed: BytesN<32>) -> Result<(), Error>
+pub fn fulfill_random(env: Env, oracle: Address, caller: Address, request_id: u64, server_seed: BytesN<32>) -> Result<(), Error>
 ```
 
 #### Parameters
@@ -174,10 +174,10 @@ pub fn get_entropy_metadata(env: Env) -> Result<EntropySourceMetadata, Error>
 `Result<EntropySourceMetadata, Error>`
 
 ### `get_result`
-Return the fulfilled result for a `request_id`.  Returns `RequestNotFound` if the request is still pending or never existed.
+Return the fulfilled result for `caller`'s `request_id`.  Returns `RequestNotFound` if the request is still pending, never existed, or belongs to a different caller.
 
 ```rust
-pub fn get_result(env: Env, request_id: u64) -> Result<FulfilledEntry, Error>
+pub fn get_result(env: Env, caller: Address, request_id: u64) -> Result<FulfilledEntry, Error>
 ```
 
 #### Parameters
@@ -192,10 +192,10 @@ pub fn get_result(env: Env, request_id: u64) -> Result<FulfilledEntry, Error>
 `Result<FulfilledEntry, Error>`
 
 ### `get_request_status`
-Return the lifecycle status for a request id.
+Return the lifecycle status for `caller`'s request id.
 
 ```rust
-pub fn get_request_status(env: Env, request_id: u64) -> Result<RequestStatus, Error>
+pub fn get_request_status(env: Env, caller: Address, request_id: u64) -> Result<RequestStatus, Error>
 ```
 
 #### Parameters

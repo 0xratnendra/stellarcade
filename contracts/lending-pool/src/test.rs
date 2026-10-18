@@ -1,5 +1,8 @@
 use super::*;
-use soroban_sdk::{testutils::Address as _, Address, Env};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger},
+    Address, Env,
+};
 
 fn setup_client(env: &Env) -> (LendingPoolClient<'_>, Address) {
     let admin = Address::generate(env);

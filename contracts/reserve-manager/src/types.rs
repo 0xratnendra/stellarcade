@@ -44,10 +44,31 @@ pub struct ReserveState {
     pub last_audit_ledger: u32,
 }
 
+/// Optional `ManagerConfig` wrapper for use inside `#[contracttype]` structs.
+/// Soroban's XDR layer does not support `Option<CustomStruct>` as a field, so
+/// an explicit two-variant enum is used instead.
+///
+/// Zero-state (contract not initialised): `OptionalManagerConfig::None`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OptionalManagerConfig {
+    None,
+    Some(ManagerConfig),
+}
+
+impl From<Option<ManagerConfig>> for OptionalManagerConfig {
+    fn from(value: Option<ManagerConfig>) -> Self {
+        match value {
+            Some(config) => OptionalManagerConfig::Some(config),
+            None => OptionalManagerConfig::None,
+        }
+    }
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReserveSnapshot {
-    pub config: Option<ManagerConfig>,
+    pub config: OptionalManagerConfig,
     pub reserves: Vec<ReserveState>,
     pub ledger: u32,
 }
