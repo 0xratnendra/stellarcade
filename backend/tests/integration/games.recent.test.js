@@ -53,6 +53,9 @@ app.use((req, res, next) => {
 });
 
 app.use('/api/games', router);
+app.use((err, req, res, _next) => {
+  res.status(err.statusCode || 500).json({ error: { message: err.message, code: err.code } });
+});
 
 describe('GET /api/games', () => {
   test('returns catalog payload without missing-module errors', async () => {
@@ -196,5 +199,36 @@ describe('GET /api/games/recent', () => {
     expect(res.status).toBe(200);
     expect(res.body.page).toBe(1);
     expect(res.body.pageSize).toBe(10);
+  });
+
+  test('should filter by player address', async () => {
+    GameModel.findRecent.mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 10,
+    });
+
+    const player = 'G' + 'A'.repeat(55);
+    const res = await request(app).get('/api/games/recent').query({ player });
+
+    expect(res.status).toBe(200);
+    expect(GameModel.findRecent).toHaveBeenCalledWith(expect.objectContaining({ player }));
+  });
+
+  test('should return 400 for an invalid player address', async () => {
+    const res = await request(app).get('/api/games/recent').query({ player: 'not-an-address' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('INVALID_PLAYER_ADDRESS');
+    expect(GameModel.findRecent).not.toHaveBeenCalled();
+  });
+
+  test('should return 400 for a player address that is too short', async () => {
+    const res = await request(app).get('/api/games/recent').query({ player: 'GSHORT' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('INVALID_PLAYER_ADDRESS');
+    expect(GameModel.findRecent).not.toHaveBeenCalled();
   });
 });
