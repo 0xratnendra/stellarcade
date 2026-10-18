@@ -52,6 +52,13 @@ const routeDocs = [
         description: 'Number of games to return per page',
       },
       {
+        name: 'player',
+        in: 'query',
+        required: false,
+        schema: { type: 'string' },
+        description: 'Filter recent games by player address (Stellar G... address).',
+      },
+      {
         name: 'gameType',
         in: 'query',
         required: false,

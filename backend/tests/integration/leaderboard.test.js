@@ -38,18 +38,18 @@ describe('GET /leaderboard', () => {
     jest.clearAllMocks();
   });
 
-  test('ranks players by total payout, not fabricated scores', async () => {
+  test('ranks players by net winnings with gamesPlayed, not fabricated scores', async () => {
     GameModel.getLeaderboard.mockResolvedValue([
-      { userId: 1, walletAddress: 'GALICE...', username: 'alice', score: '120.5000000' },
-      { userId: 2, walletAddress: 'GBOB...', username: 'bob', score: '80.0000000' },
+      { playerAddress: 'GALICE...', score: '40.5', gamesPlayed: 12 },
+      { playerAddress: 'GBOB...', score: '-10', gamesPlayed: 5 },
     ]);
 
     const res = await request(app).get('/leaderboard');
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual([
-      { rank: 1, playerAddress: 'GALICE...', score: '120.5000000' },
-      { rank: 2, playerAddress: 'GBOB...', score: '80.0000000' },
+      { rank: 1, playerAddress: 'GALICE...', score: '40.5', gamesPlayed: 12 },
+      { rank: 2, playerAddress: 'GBOB...', score: '-10', gamesPlayed: 5 },
     ]);
   });
 
@@ -59,6 +59,14 @@ describe('GET /leaderboard', () => {
     await request(app).get('/leaderboard');
 
     expect(GameModel.getLeaderboard).toHaveBeenCalledWith(expect.objectContaining({ limit: 10 }));
+  });
+
+  test('caps the limit at 100', async () => {
+    GameModel.getLeaderboard.mockResolvedValue([]);
+
+    await request(app).get('/leaderboard').query({ limit: 500 });
+
+    expect(GameModel.getLeaderboard).toHaveBeenCalledWith(expect.objectContaining({ limit: 100 }));
   });
 
   test('passes the game query param through as a game-type filter', async () => {
@@ -78,5 +86,17 @@ describe('GET /leaderboard', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual([]);
+  });
+
+  test('returns score as a decimal string, not a float', async () => {
+    GameModel.getLeaderboard.mockResolvedValue([
+      { playerAddress: 'GALICE...', score: '15.5', gamesPlayed: 3 },
+    ]);
+
+    const res = await request(app).get('/leaderboard');
+
+    expect(res.status).toBe(200);
+    expect(typeof res.body[0].score).toBe('string');
+    expect(res.body[0].score).toBe('15.5');
   });
 });
