@@ -195,3 +195,76 @@ pub fn house_balance(env: Env) -> Result<i128, Error>
 
 `Result<i128, Error>`
 
+### `set_wager_limits`
+Update minimum and maximum wager limits. Admin only.
+
+```rust
+pub fn set_wager_limits(env: Env, admin: Address, min_wager: i128, max_wager: i128) -> Result<(), Error>
+```
+
+#### Parameters
+
+| Name | Type |
+|------|------|
+| `env` | `Env` |
+| `admin` | `Address` |
+| `min_wager` | `i128` |
+| `max_wager` | `i128` |
+
+#### Return Type
+
+`Result<(), Error>`
+
+### `set_paused`
+Pause or unpause contract operations. Admin only.
+
+```rust
+pub fn set_paused(env: Env, admin: Address, paused: bool) -> Result<(), Error>
+```
+
+#### Parameters
+
+| Name | Type |
+|------|------|
+| `env` | `Env` |
+| `admin` | `Address` |
+| `paused` | `bool` |
+
+#### Return Type
+
+`Result<(), Error>`
+
+### `get_config`
+Query the complete configuration snapshot of the contract.
+
+```rust
+pub fn get_config(env: Env) -> Result<CoinFlipConfig, Error>
+```
+
+#### Parameters
+
+| Name | Type |
+|------|------|
+| `env` | `Env` |
+
+#### Return Type
+
+`Result<CoinFlipConfig, Error>`
+
+### `is_paused`
+Query whether the contract is currently paused.
+
+```rust
+pub fn is_paused(env: Env) -> Result<bool, Error>
+```
+
+#### Parameters
+
+| Name | Type |
+|------|------|
+| `env` | `Env` |
+
+#### Return Type
+
+`Result<bool, Error>`
+

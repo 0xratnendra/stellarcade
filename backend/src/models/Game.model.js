@@ -77,13 +77,14 @@ const GameModel = {
    * @param {Object} params - Query parameters
    * @param {number} params.page - Page number
    * @param {number} params.limit - Items per page
+   * @param {string} [params.player] - Filter by player address (on-chain player_address or users.wallet_address)
    * @param {string} [params.gameType] - Filter by game type
    * @param {string} [params.status] - Filter by game result (mapped from status)
    * @param {string} [params.sortBy] - Column to sort by
    * @param {string} [params.sortDir] - Sort direction (asc/desc)
    * @returns {Promise<{items: Array, total: number, page: number, pageSize: number}>}
    */
-  async findRecent({ page = 1, limit = 10, gameType, status, sortBy, sortDir, player }) {
+  async findRecent({ page = 1, limit = 10, player, gameType, status, sortBy, sortDir }) {
     try {
       const safePage = Math.max(Number(page) || 1, 1);
       const safeLimit = Math.max(Number(limit) || 10, 1);
@@ -102,18 +103,18 @@ const GameModel = {
         )
         .leftJoin('users', 'games.user_id', 'users.id');
 
+      if (player) {
+        query.where(function () {
+          this.where('games.player_address', player).orWhere('users.wallet_address', player);
+        });
+      }
+
       if (gameType) {
         query.where('game_type', gameType);
       }
 
       if (status) {
         query.where('result', status);
-      }
-
-      if (player) {
-        query.where((builder) => {
-          builder.where('users.wallet_address', player).orWhere('games.player_address', player);
-        });
       }
 
       const countQuery = query.clone().clearSelect().clearOrder().count('* as total').first();
@@ -131,34 +132,46 @@ const GameModel = {
   },
 
   /**
-   * Ranks users by total payout (winnings), optionally scoped to one game type.
+   * Ranks players by net winnings (payout - bet_amount) from resolved on-chain games.
+   * Off-chain simulated rows and unresolved games never affect the result.
    *
    * @param {Object} params
    * @param {string} [params.gameType] - Filter by game type
    * @param {number} [params.limit=10]
-   * @returns {Promise<Array<{userId: number, walletAddress: string, username: string|null, score: string}>>}
+   * @returns {Promise<Array<{playerAddress: string, score: string, gamesPlayed: number}>>}
    */
   async getLeaderboard({ gameType, limit = 10 } = {}) {
     try {
-      const safeLimit = Math.max(Number(limit) || 10, 1);
+      const safeLimit = Math.min(Math.max(Number(limit) || 10, 1), 100);
 
-      const query = db('games')
-        .join('users', 'games.user_id', 'users.id')
+      // Net score computed in a subquery so ORDER BY can reference it.
+      const subquery = db('games')
+        .where('status', 'resolved')
+        .whereNotNull('chain_game_id')
         .select(
-          'games.user_id as userId',
-          'users.wallet_address as walletAddress',
-          'users.username as username'
+          'player_address',
+          db.raw('SUM(payout) - SUM(bet_amount) as net_score'),
+          db.raw('SUM(payout) as total_payout'),
+          db.raw('SUM(bet_amount) as total_bet'),
+          db.raw('COUNT(*) as games_played')
         )
-        .sum('games.payout as score')
-        .groupBy('games.user_id', 'users.wallet_address', 'users.username')
-        .orderBy('score', 'desc')
-        .limit(safeLimit);
+        .groupBy('player_address');
 
       if (gameType) {
-        query.where('games.game_type', gameType);
+        subquery.where('game_type', gameType);
       }
 
-      return await query;
+      const rows = await db
+        .from(subquery.as('scores'))
+        .select('player_address', 'net_score', 'total_payout', 'total_bet', 'games_played')
+        .orderBy('net_score', 'desc')
+        .limit(safeLimit);
+
+      return rows.map((row) => ({
+        playerAddress: row.player_address,
+        score: String(row.net_score),
+        gamesPlayed: Number(row.games_played),
+      }));
     } catch (error) {
       logger.error('Error in GameModel.getLeaderboard:', error);
       throw error;

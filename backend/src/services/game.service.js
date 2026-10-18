@@ -116,8 +116,9 @@ const gameService = {
     const rows = await GameModel.getLeaderboard({ gameType, limit });
     return rows.map((row, index) => ({
       rank: index + 1,
-      playerAddress: row.walletAddress,
+      playerAddress: row.playerAddress,
       score: String(row.score || 0),
+      gamesPlayed: row.gamesPlayed,
     }));
   },
 };
