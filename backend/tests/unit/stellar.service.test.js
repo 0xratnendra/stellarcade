@@ -6,7 +6,11 @@
 'use strict';
 
 jest.mock('../../src/config/stellar', () => ({
-  server: { submitTransaction: jest.fn() },
+  server: {
+    submitTransaction: jest.fn(),
+    transactions: jest.fn(),
+    operations: jest.fn(),
+  },
   network: 'testnet',
   passphrase: 'Test SDF Network ; September 2015',
   maxRetries: 2,
@@ -27,6 +31,7 @@ const StellarSdk = require('@stellar/stellar-sdk');
 const { server } = require('../../src/config/stellar');
 const {
   submitTransaction,
+  verifyDepositPayment,
   STELLAR_ERRORS,
   _parseHorizonError,
 } = require('../../src/services/stellar.service');
@@ -352,3 +357,114 @@ describe('stellar.service — _parseHorizonError', () => {
     expect(result.message).toBe('socket hang up');
   });
 });
+
+describe('stellar.service — verifyDepositPayment', () => {
+  const validHash = 'a'.repeat(64);
+  const source = 'GAALICE123456789012345678901234567890123456789012345678';
+  const vault = 'GAVAULT123456789012345678901234567890123456789012345678';
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('rejects invalid hash format', async () => {
+    await expect(
+      verifyDepositPayment({ txHash: 'short', expectedSource: source, expectedVault: vault })
+    ).rejects.toMatchObject({ statusCode: 400, code: 'INVALID_TX_HASH' });
+
+    await expect(
+      verifyDepositPayment({ txHash: 'g'.repeat(64), expectedSource: source, expectedVault: vault })
+    ).rejects.toMatchObject({ statusCode: 400, code: 'INVALID_TX_HASH' });
+  });
+
+  test('rejects when transaction not found on Horizon (404)', async () => {
+    const notFoundError = new Error('Not found');
+    notFoundError.response = { status: 404 };
+    server.transactions.mockReturnValue({
+      transaction: jest.fn().mockReturnValue({
+        call: jest.fn().mockRejectedValue(notFoundError),
+      }),
+    });
+
+    await expect(
+      verifyDepositPayment({ txHash: validHash, expectedSource: source, expectedVault: vault })
+    ).rejects.toMatchObject({ statusCode: 404, code: 'TX_NOT_FOUND' });
+  });
+
+  test('rejects when transaction failed on-chain', async () => {
+    server.transactions.mockReturnValue({
+      transaction: jest.fn().mockReturnValue({
+        call: jest.fn().mockResolvedValue({ successful: false }),
+      }),
+    });
+
+    await expect(
+      verifyDepositPayment({ txHash: validHash, expectedSource: source, expectedVault: vault })
+    ).rejects.toMatchObject({ statusCode: 400, code: 'TX_FAILED' });
+  });
+
+  test('rejects when no matching payment operation is found', async () => {
+    server.transactions.mockReturnValue({
+      transaction: jest.fn().mockReturnValue({
+        call: jest.fn().mockResolvedValue({ successful: true, ledger: 100 }),
+      }),
+    });
+    server.operations.mockReturnValue({
+      forTransaction: jest.fn().mockReturnValue({
+        call: jest.fn().mockResolvedValue({
+          records: [
+            {
+              type: 'payment',
+              to: 'GWRONGVAULT123',
+              from: source,
+              asset_type: 'native',
+              amount: '50.0000000',
+            },
+          ],
+        }),
+      }),
+    });
+
+    await expect(
+      verifyDepositPayment({ txHash: validHash, expectedSource: source, expectedVault: vault })
+    ).rejects.toMatchObject({ statusCode: 400, code: 'PAYMENT_OP_NOT_FOUND' });
+  });
+
+  test('succeeds for valid payment and returns parsed amount and asset', async () => {
+    server.transactions.mockReturnValue({
+      transaction: jest.fn().mockReturnValue({
+        call: jest.fn().mockResolvedValue({ successful: true, ledger_attr: 12345 }),
+      }),
+    });
+    server.operations.mockReturnValue({
+      forTransaction: jest.fn().mockReturnValue({
+        call: jest.fn().mockResolvedValue({
+          records: [
+            {
+              type: 'payment',
+              to: vault,
+              from: source,
+              asset_type: 'native',
+              amount: '100.5000000',
+            },
+          ],
+        }),
+      }),
+    });
+
+    const res = await verifyDepositPayment({
+      txHash: validHash,
+      expectedSource: source,
+      expectedVault: vault,
+      expectedAsset: 'XLM',
+    });
+
+    expect(res.valid).toBe(true);
+    expect(res.amount).toBe('100.5000000');
+    expect(res.numericAmount).toBe(100.5);
+    expect(res.asset).toBe('XLM');
+    expect(res.txHash).toBe(validHash);
+    expect(res.ledger).toBe(12345);
+  });
+});
+

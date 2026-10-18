@@ -19,7 +19,7 @@ const GAME_ICON: Record<SettledRound["gameType"], React.ElementType> = {
 };
 
 export default function HistoryPage() {
-  const { items: rounds } = useSettledRounds();
+  const { items: rounds, isLoading, error } = useSettledRounds();
 
   const settled = rounds.length;
   const hasRounds = settled > 0;
@@ -80,7 +80,16 @@ export default function HistoryPage() {
           </h2>
         </header>
 
-        {!hasRounds ? (
+        {error ? (
+          <div className="p-6 text-center text-sm text-destructive">
+            {error}
+          </div>
+        ) : isLoading ? (
+          <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
+            <div className="size-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <p className="text-sm font-medium">Loading settled rounds from network…</p>
+          </div>
+        ) : !hasRounds ? (
           <EmptyState
             size="lg"
             icon={History}

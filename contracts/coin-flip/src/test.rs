@@ -4,7 +4,7 @@ use soroban_sdk::{
     token::{StellarAssetClient, TokenClient},
     Address, BytesN, Env,
 };
-use stellarcade_random_generator::{RandomGenerator, RandomGeneratorClient};
+use stellarcade_random_generator::{RandomGenerator, RandomGeneratorClient as RngTestClient};
 
 // -------------------------------------------------------------------
 // Helpers
@@ -24,7 +24,7 @@ fn seed(env: &Env, byte: u8) -> BytesN<32> {
 
 struct Setup<'a> {
     flip_client: CoinFlipClient<'a>,
-    rng_client: RandomGeneratorClient<'a>,
+    rng_client: RngTestClient<'a>,
     /// Address of the coin-flip contract; it is the RNG "caller" its requests
     /// are namespaced under.
     flip_id: Address,
@@ -43,7 +43,7 @@ fn setup(env: &Env) -> Setup<'_> {
 
     // Deploy RNG
     let rng_id = env.register(RandomGenerator, ());
-    let rng_client = RandomGeneratorClient::new(env, &rng_id);
+    let rng_client = RngTestClient::new(env, &rng_id);
 
     // Deploy CoinFlip
     let flip_id = env.register(CoinFlip, ());
@@ -522,7 +522,7 @@ fn test_insufficient_house_liquidity_rejected() {
     let (token_addr, token_sac) = create_token(&env, &token_admin);
 
     let rng_id = env.register(RandomGenerator, ());
-    let rng_client = RandomGeneratorClient::new(&env, &rng_id);
+    let rng_client = RngTestClient::new(&env, &rng_id);
 
     let flip_id = env.register(CoinFlip, ());
     let flip_client = CoinFlipClient::new(&env, &flip_id);
@@ -567,7 +567,7 @@ fn test_exact_house_liquidity_accepted() {
     let (token_addr, token_sac) = create_token(&env, &token_admin);
 
     let rng_id = env.register(RandomGenerator, ());
-    let rng_client = RandomGeneratorClient::new(&env, &rng_id);
+    let rng_client = RngTestClient::new(&env, &rng_id);
 
     let flip_id = env.register(CoinFlip, ());
     let flip_client = CoinFlipClient::new(&env, &flip_id);
@@ -1007,4 +1007,181 @@ fn test_game_id_does_not_collide_with_another_games_request_id() {
         .fulfill_random(&s.oracle, &s.flip_id, &1u64, &seed(&env, 1));
     s.flip_client.resolve_bet(&1u64);
     assert!(s.flip_client.get_game(&1u64).resolved);
+}
+
+// -------------------------------------------------------------------
+// Config & Pause Controls
+// -------------------------------------------------------------------
+
+#[test]
+fn test_init_config_validation() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let rng_id = env.register(RandomGenerator, ());
+    let (token_addr, _) = create_token(&env, &admin);
+    env.mock_all_auths();
+
+    // min_wager <= 0
+    let flip_id1 = env.register(CoinFlip, ());
+    let c1 = CoinFlipClient::new(&env, &flip_id1);
+    assert_eq!(
+        c1.try_init(&admin, &rng_id, &token_addr, &0i128, &100i128, &250i128),
+        Err(Ok(Error::InvalidConfig))
+    );
+
+    // min_wager > max_wager
+    let flip_id2 = env.register(CoinFlip, ());
+    let c2 = CoinFlipClient::new(&env, &flip_id2);
+    assert_eq!(
+        c2.try_init(&admin, &rng_id, &token_addr, &200i128, &100i128, &250i128),
+        Err(Ok(Error::InvalidConfig))
+    );
+
+    // house_edge_bps < 0
+    let flip_id3 = env.register(CoinFlip, ());
+    let c3 = CoinFlipClient::new(&env, &flip_id3);
+    assert_eq!(
+        c3.try_init(&admin, &rng_id, &token_addr, &10i128, &100i128, &-1i128),
+        Err(Ok(Error::InvalidConfig))
+    );
+
+    // house_edge_bps >= 10_000
+    let flip_id4 = env.register(CoinFlip, ());
+    let c4 = CoinFlipClient::new(&env, &flip_id4);
+    assert_eq!(
+        c4.try_init(&admin, &rng_id, &token_addr, &10i128, &100i128, &10_000i128),
+        Err(Ok(Error::InvalidConfig))
+    );
+}
+
+#[test]
+fn test_get_config_and_defaults() {
+    let env = Env::default();
+    let s = setup(&env);
+
+    let config = s.flip_client.get_config();
+    assert_eq!(config.admin, s.admin);
+    assert_eq!(config.token, s.token_addr);
+    assert_eq!(config.min_wager, 10i128);
+    assert_eq!(config.max_wager, 1000i128);
+    assert_eq!(config.house_edge_bps, 250i128);
+    assert_eq!(config.paused, false);
+    assert_eq!(
+        config.refund_timeout_ledgers,
+        DEFAULT_REFUND_TIMEOUT_LEDGERS
+    );
+    assert_eq!(s.flip_client.is_paused(), false);
+}
+
+#[test]
+fn test_set_wager_limits() {
+    let env = Env::default();
+    let s = setup(&env);
+
+    // Valid update
+    s.flip_client.set_wager_limits(&s.admin, &50i128, &2000i128);
+    let cfg = s.flip_client.get_config();
+    assert_eq!(cfg.min_wager, 50i128);
+    assert_eq!(cfg.max_wager, 2000i128);
+
+    // Invalid limits (min > max)
+    assert_eq!(
+        s.flip_client
+            .try_set_wager_limits(&s.admin, &500i128, &200i128),
+        Err(Ok(Error::InvalidConfig))
+    );
+
+    // Invalid limits (min <= 0)
+    assert_eq!(
+        s.flip_client
+            .try_set_wager_limits(&s.admin, &0i128, &200i128),
+        Err(Ok(Error::InvalidConfig))
+    );
+
+    // Non-admin rejected
+    let attacker = Address::generate(&env);
+    assert_eq!(
+        s.flip_client
+            .try_set_wager_limits(&attacker, &20i128, &500i128),
+        Err(Ok(Error::NotAuthorized))
+    );
+}
+
+#[test]
+fn test_pause_and_unpause() {
+    let env = Env::default();
+    let s = setup(&env);
+
+    assert_eq!(s.flip_client.is_paused(), false);
+
+    // Admin pauses
+    s.flip_client.set_paused(&s.admin, &true);
+    assert_eq!(s.flip_client.is_paused(), true);
+    assert_eq!(s.flip_client.get_config().paused, true);
+
+    // Admin unpauses
+    s.flip_client.set_paused(&s.admin, &false);
+    assert_eq!(s.flip_client.is_paused(), false);
+    assert_eq!(s.flip_client.get_config().paused, false);
+
+    // Non-admin rejected
+    let attacker = Address::generate(&env);
+    assert_eq!(
+        s.flip_client.try_set_paused(&attacker, &true),
+        Err(Ok(Error::NotAuthorized))
+    );
+}
+
+#[test]
+fn test_place_bet_blocked_when_paused() {
+    let env = Env::default();
+    let s = setup(&env);
+    let player = Address::generate(&env);
+    s.token_sac.mint(&player, &500i128);
+
+    s.flip_client.set_paused(&s.admin, &true);
+
+    let res = s
+        .flip_client
+        .try_place_bet(&player, &HEADS, &100i128, &1u64);
+    assert_eq!(res, Err(Ok(Error::Paused)));
+
+    // Unpause and verify betting works
+    s.flip_client.set_paused(&s.admin, &false);
+    assert!(s
+        .flip_client
+        .try_place_bet(&player, &HEADS, &100i128, &1u64)
+        .is_ok());
+}
+
+#[test]
+fn test_resolve_and_cancel_work_while_paused() {
+    let env = Env::default();
+    let s = setup(&env);
+    let player1 = Address::generate(&env);
+    let player2 = Address::generate(&env);
+    s.token_sac.mint(&player1, &500i128);
+    s.token_sac.mint(&player2, &500i128);
+
+    // Place bet 1
+    s.flip_client.place_bet(&player1, &HEADS, &100i128, &1u64);
+
+    // Place bet 2
+    s.flip_client.place_bet(&player2, &HEADS, &100i128, &2u64);
+
+    // Pause contract
+    s.flip_client.set_paused(&s.admin, &true);
+
+    // Resolve bet 1 while paused
+    s.rng_client
+        .fulfill_random(&s.oracle, &s.flip_id, &1u64, &seed(&env, 0));
+    assert!(s.flip_client.try_resolve_bet(&1u64).is_ok());
+    let g1 = s.flip_client.get_game(&1u64);
+    assert!(g1.resolved);
+
+    // Cancel stale bet 2 while paused
+    advance_past_timeout(&env);
+    assert!(s.flip_client.try_cancel_stale_bet(&player2, &2u64).is_ok());
+    let g2 = s.flip_client.get_game(&2u64);
+    assert!(g2.refunded);
 }

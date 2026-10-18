@@ -569,4 +569,50 @@ describe('ApiClient — result envelope shape', () => {
       expect(typeof result.error.message).toBe('string');
     }
   });
+
+  it('getRecentGames queries /games/recent with player and pagination', async () => {
+    const mockData = {
+      items: [{ id: 1, game_type: 'coin-flip', bet_amount: 10, result: 'win' }],
+      total: 1,
+      page: 1,
+      pageSize: 10,
+      totalPages: 1,
+    };
+    mockFetch(200, mockData);
+
+    const client = new ApiClient();
+    const result = await client.getRecentGames({ player: 'GALICE123', page: 1, limit: 10 });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.items).toHaveLength(1);
+      expect(result.data.items[0].id).toBe(1);
+    }
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/games/recent?player=GALICE123&page=1&limit=10'),
+      expect.anything()
+    );
+  });
+
+  it('getLeaderboard queries /leaderboard with game and limit', async () => {
+    const mockData = [
+      { rank: 1, playerAddress: 'GALICE123', score: '500' },
+      { rank: 2, playerAddress: 'GBOB456', score: '300' },
+    ];
+    mockFetch(200, mockData);
+
+    const client = new ApiClient();
+    const result = await client.getLeaderboard({ game: 'coin-flip', limit: 25 });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toHaveLength(2);
+      expect(result.data[0].playerAddress).toBe('GALICE123');
+    }
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/leaderboard?game=coin-flip&limit=25'),
+      expect.anything()
+    );
+  });
 });
+

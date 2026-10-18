@@ -10,6 +10,7 @@ import { EmptyState } from "../../../src/components/ui/empty-state";
 import { PageHeader } from "../../../src/components/ui/page-header";
 import { LeaderboardPrizeTicker } from "../../../src/components";
 import { cn } from "../../../src/lib/utils";
+import { useWalletStatus } from "../../../src/hooks/useWalletStatus";
 import { useLeaderboard } from "../../../src/services/player-data";
 
 const TIMEFRAMES = [
@@ -27,7 +28,8 @@ function shortAddress(address: string, lead = 6) {
 
 export default function LeaderboardPage() {
   const [timeframe, setTimeframe] = useState<Timeframe>("weekly");
-  const { items: entries } = useLeaderboard();
+  const { address: connectedAddress } = useWalletStatus();
+  const { items: entries, isLoading, error } = useLeaderboard();
 
   const hasEntries = entries.length > 0;
 
@@ -69,8 +71,18 @@ export default function LeaderboardPage() {
         }
       />
 
-      {!hasEntries ? (
+      {error ? (
+        <section className="rounded-2xl border border-border bg-card/60 p-6 text-center text-sm text-destructive backdrop-blur-sm">
+          {error}
+        </section>
+      ) : !hasEntries ? (
         <section className="rounded-2xl border border-border bg-card/60 backdrop-blur-sm">
+          {isLoading && (
+            <div className="flex flex-col items-center justify-center gap-2 pt-8 pb-2 text-muted-foreground">
+              <div className="size-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              <p className="text-xs font-medium">Loading rankings from network…</p>
+            </div>
+          )}
           <EmptyState
             size="lg"
             icon={Trophy}
@@ -157,26 +169,43 @@ export default function LeaderboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/70">
-                  {entries.map((player) => (
-                    <tr key={player.address} className="transition-colors hover:bg-primary/5">
-                      <td className="px-5 py-3.5">
-                        <span
-                          className={cn(
-                            "inline-flex size-7 items-center justify-center rounded-md font-mono text-xs font-bold",
-                            player.rank <= 3
-                              ? "bg-primary/15 text-primary"
-                              : "bg-background/60 text-muted-foreground",
-                          )}
-                        >
-                          {player.rank}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <p className="font-semibold text-foreground">{player.username}</p>
-                        <p className="font-mono text-[11px] text-muted-foreground">
-                          {shortAddress(player.address, 8)}
-                        </p>
-                      </td>
+                  {entries.map((player) => {
+                    const isConnected =
+                      Boolean(connectedAddress) &&
+                      player.address.toLowerCase() === connectedAddress?.toLowerCase();
+                    return (
+                      <tr
+                        key={player.address}
+                        className={cn(
+                          "transition-colors hover:bg-primary/5",
+                          isConnected && "bg-primary/10 border-l-4 border-l-primary font-medium",
+                        )}
+                      >
+                        <td className="px-5 py-3.5">
+                          <span
+                            className={cn(
+                              "inline-flex size-7 items-center justify-center rounded-md font-mono text-xs font-bold",
+                              player.rank <= 3
+                                ? "bg-primary/15 text-primary"
+                                : "bg-background/60 text-muted-foreground",
+                            )}
+                          >
+                            {player.rank}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold text-foreground">{player.username}</p>
+                            {isConnected && (
+                              <span className="rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-bold text-primary">
+                                YOU
+                              </span>
+                            )}
+                          </div>
+                          <p className="font-mono text-[11px] text-muted-foreground">
+                            {shortAddress(player.address, 8)}
+                          </p>
+                        </td>
                       <td className="px-5 py-3.5 text-right font-mono font-semibold tabular-nums text-foreground">
                         <span className="inline-flex items-center gap-1">
                           <Flame className="size-3.5 text-amber-400" aria-hidden />
@@ -193,7 +222,8 @@ export default function LeaderboardPage() {
                         {player.totalVolumeXlm.toLocaleString()} XLM
                       </td>
                     </tr>
-                  ))}
+                  );
+                })}
                 </tbody>
               </table>
             </div>

@@ -9,7 +9,8 @@ const routeDocs = [
     method: 'get',
     path: '/',
     operationId: 'getLeaderboard',
-    summary: 'Rank players by total payout, optionally scoped to one game type',
+    summary:
+      'Rank players by net winnings (payout - bet_amount) from resolved on-chain games, optionally scoped to one game type',
     tags: ['Leaderboard'],
     parameters: [
       {
@@ -23,8 +24,8 @@ const routeDocs = [
         name: 'limit',
         in: 'query',
         required: false,
-        schema: { type: 'integer', minimum: 1, default: 10 },
-        description: 'Maximum number of entries returned.',
+        schema: { type: 'integer', minimum: 1, maximum: 100, default: 10 },
+        description: 'Maximum number of entries returned (max 100).',
       },
     ],
     responses: {
@@ -36,11 +37,12 @@ const routeDocs = [
               type: 'array',
               items: {
                 type: 'object',
-                required: ['rank', 'playerAddress', 'score'],
+                required: ['rank', 'playerAddress', 'score', 'gamesPlayed'],
                 properties: {
                   rank: { type: 'integer' },
                   playerAddress: { type: 'string' },
                   score: { type: 'string' },
+                  gamesPlayed: { type: 'integer' },
                 },
               },
             },

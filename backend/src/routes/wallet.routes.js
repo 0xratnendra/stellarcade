@@ -189,8 +189,6 @@ router.post(
   auth,
   rateLimit('wallet'),
   idempotency,
-  amountValidation,
-  validate,
   deposit
 );
 router.post(

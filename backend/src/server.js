@@ -32,11 +32,30 @@ const db = require('./config/database');
 const redis = require('./config/redis');
 
 /**
+ * CORS Configuration
+ * Only allow origins listed in CORS_ORIGINS (comma-separated).
+ * Requests with no Origin header (server-to-server, health checks) are allowed.
+ */
+const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(null, false);
+  },
+};
+
+/**
  * Standard Security and Utility Middleware
  */
 app.use(correlationId); // Must be very early for full request-lifecycle coverage
 app.use(helmet()); // Basic security headers
-app.use(cors()); // Enable Cross-Origin Resource Sharing
+app.use(cors(corsOptions)); // Enable Cross-Origin Resource Sharing for allowed origins only
 app.use(
   express.json({
     limit: bodySizeLimit,

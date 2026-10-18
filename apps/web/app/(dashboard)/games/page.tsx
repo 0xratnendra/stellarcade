@@ -11,14 +11,8 @@ import { Button } from "../../../src/components/ui/button";
 import { PageHeader } from "../../../src/components/ui/page-header";
 import { cn } from "../../../src/lib/utils";
 import Drawer from "../../../src/components/Drawer";
-import CoinFlipResultCard from "../../../src/components/CoinFlipResultCard";
+import CoinFlipPlayPanel from "../../../src/components/CoinFlipPlayPanel";
 import { ONCHAIN_GAMES_CATALOG } from "../../../src/services/typed-api-sdk";
-import { useWalletStatus } from "../../../src/hooks/useWalletStatus";
-import {
-  CoinFlipGame,
-  CoinFlipGameState,
-  CoinFlipSide,
-} from "../../../src/types/contracts/coinFlip";
 import type { Game } from "../../../src/types/api-client";
 
 const CATEGORIES = [
@@ -28,27 +22,10 @@ const CATEGORIES = [
   { id: "Jackpot / Pool", label: "Prize Pools" },
 ] as const;
 
-const WAGER_PRESETS = [5, 10, 25, 50];
-
-/** Shared styling for the drawer's pick/wager choice buttons. */
-function choiceClass(selected: boolean) {
-  return cn(
-    "rounded-lg border px-3 py-2.5 text-sm font-semibold transition-colors",
-    selected
-      ? "border-primary bg-primary/15 text-primary"
-      : "border-border bg-background/40 text-foreground hover:border-primary/40",
-  );
-}
-
 function GamesPageContent() {
-  const wallet = useWalletStatus();
   const searchParams = useSearchParams();
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [activePlayGame, setActivePlayGame] = useState<Game | null>(null);
-  const [playWager, setPlayWager] = useState<number>(5);
-  const [playSide, setPlaySide] = useState<CoinFlipSide>(CoinFlipSide.Heads);
-  const [isExecutingPlay, setIsExecutingPlay] = useState<boolean>(false);
-  const [activeGameResult, setActiveGameResult] = useState<CoinFlipGame | null>(null);
 
   // Deep link from the lobby's "Play" buttons (/games?game=coinflip-duel)
   // opens straight into that game's drawer.
@@ -58,7 +35,6 @@ function GamesPageContent() {
     const match = ONCHAIN_GAMES_CATALOG.find((g) => g.id === requested);
     if (match) {
       setActivePlayGame(match);
-      setActiveGameResult(null);
     }
   }, [searchParams]);
 
@@ -68,35 +44,6 @@ function GamesPageContent() {
 
   const handleStartPlay = (game: Game) => {
     setActivePlayGame(game);
-    setActiveGameResult(null);
-  };
-
-  const handleExecutePlay = async () => {
-    if (!activePlayGame) return;
-    if (!wallet.capabilities.isConnected) {
-      await wallet.connect();
-      return;
-    }
-
-    setIsExecutingPlay(true);
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 800));
-
-      const isWin = Math.random() > 0.48;
-      const gameId = `cf-${Date.now().toString(16)}-${Math.random().toString(36).slice(2, 6)}`;
-      const resultGame: CoinFlipGame = {
-        id: gameId,
-        wager: `${playWager}`,
-        side: playSide,
-        status: CoinFlipGameState.Resolved,
-        winner: isWin ? wallet.address ?? "PLAYER" : "HOUSE_VAULT",
-        settledAt: Date.now(),
-      };
-
-      setActiveGameResult(resultGame);
-    } finally {
-      setIsExecutingPlay(false);
-    }
   };
 
   return (
@@ -211,87 +158,7 @@ function GamesPageContent() {
                 : "Instant on-chain duel backed by Stellar smart contract and SHA-256 commit-reveal."}
             </p>
 
-            {activeGameResult ? (
-              <div className="flex flex-col gap-4">
-                <CoinFlipResultCard
-                  game={activeGameResult}
-                  currentWalletAddress={wallet.address ?? undefined}
-                  onRetry={() => setActiveGameResult(null)}
-                />
-                <Button
-                  type="button"
-                  variant="brand"
-                  className="w-full"
-                  onClick={() => setActiveGameResult(null)}
-                  data-testid="btn-play-again-arena"
-                >
-                  Play Another Round
-                </Button>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-5">
-                <fieldset className="flex flex-col gap-2">
-                  <legend className="mb-1 text-[13px] font-semibold text-foreground">
-                    Choose your pick
-                  </legend>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setPlaySide(CoinFlipSide.Heads)}
-                      aria-pressed={playSide === CoinFlipSide.Heads}
-                      className={choiceClass(playSide === CoinFlipSide.Heads)}
-                      data-testid="btn-pick-heads-arena"
-                    >
-                      🪙 Heads
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPlaySide(CoinFlipSide.Tails)}
-                      aria-pressed={playSide === CoinFlipSide.Tails}
-                      className={choiceClass(playSide === CoinFlipSide.Tails)}
-                      data-testid="btn-pick-tails-arena"
-                    >
-                      🪙 Tails
-                    </button>
-                  </div>
-                </fieldset>
-
-                <fieldset className="flex flex-col gap-2">
-                  <legend className="mb-1 text-[13px] font-semibold text-foreground">
-                    Wager amount (XLM)
-                  </legend>
-                  <div className="grid grid-cols-4 gap-2">
-                    {WAGER_PRESETS.map((w) => (
-                      <button
-                        key={w}
-                        type="button"
-                        onClick={() => setPlayWager(w)}
-                        aria-pressed={playWager === w}
-                        className={cn(choiceClass(playWager === w), "font-mono")}
-                      >
-                        {w}
-                      </button>
-                    ))}
-                  </div>
-                </fieldset>
-
-                <Button
-                  type="button"
-                  variant="brand"
-                  size="lg"
-                  className="w-full"
-                  onClick={handleExecutePlay}
-                  disabled={isExecutingPlay}
-                  data-testid="btn-confirm-bet-arena"
-                >
-                  {isExecutingPlay
-                    ? "🎲 Settling on Soroban…"
-                    : !wallet.capabilities.isConnected
-                      ? "Connect Wallet & Play"
-                      : `Place ${playWager} XLM Bet`}
-                </Button>
-              </div>
-            )}
+            <CoinFlipPlayPanel testIdSuffix="-arena" />
           </div>
         )}
       </Drawer>
