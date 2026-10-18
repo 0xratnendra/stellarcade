@@ -11,10 +11,13 @@ import {
   type GetGamesResponse,
   type GetProfileResponse,
   type GetWalletBalanceResponse,
+  type LeaderboardDto,
   type LoginChallengeRequest,
   type LoginChallengeResponse,
   type LoginRequest,
   type LoginResponse,
+  type RecentGameItem,
+  type RecentGamesResponse,
   type UpdateProfileRequest,
   type UpdateProfileResponse,
   type WalletAmountRequest,
@@ -428,6 +431,48 @@ export class ApiClient {
     return this._request("GET", `/quests${query}`, undefined, false, opts);
   }
 
+  /**
+   * Fetch recent games with optional player address, pagination, and game filter.
+   */
+  async getRecentGames(
+    params?: {
+      player?: string;
+      page?: number;
+      limit?: number;
+      gameType?: string;
+      status?: string;
+      cursor?: string;
+    },
+    opts?: ApiRequestOptions,
+  ): Promise<ApiResult<RecentGamesResponse>> {
+    const queryParts: string[] = [];
+    if (params?.player) queryParts.push(`player=${encodeURIComponent(params.player)}`);
+    if (params?.page) queryParts.push(`page=${encodeURIComponent(params.page)}`);
+    if (params?.limit) queryParts.push(`limit=${encodeURIComponent(params.limit)}`);
+    if (params?.gameType) queryParts.push(`gameType=${encodeURIComponent(params.gameType)}`);
+    if (params?.status) queryParts.push(`status=${encodeURIComponent(params.status)}`);
+    if (params?.cursor) queryParts.push(`cursor=${encodeURIComponent(params.cursor)}`);
+    const qs = queryParts.length > 0 ? `?${queryParts.join("&")}` : "";
+    return this._request("GET", `/games/recent${qs}`, undefined, false, opts);
+  }
+
+  /**
+   * Fetch top players ranked by total winnings from GET /leaderboard.
+   */
+  async getLeaderboard(
+    params?: {
+      game?: string;
+      limit?: number;
+    },
+    opts?: ApiRequestOptions,
+  ): Promise<ApiResult<LeaderboardDto[]>> {
+    const queryParts: string[] = [];
+    if (params?.game) queryParts.push(`game=${encodeURIComponent(params.game)}`);
+    if (params?.limit) queryParts.push(`limit=${encodeURIComponent(params.limit)}`);
+    const qs = queryParts.length > 0 ? `?${queryParts.join("&")}` : "";
+    return this._request("GET", `/leaderboard${qs}`, undefined, false, opts);
+  }
+
   async createLoginChallenge(
     input: LoginChallengeRequest,
     opts?: ApiRequestOptions,
@@ -576,4 +621,5 @@ export interface QuestProgressDto {
 }
 
 export type { ApiResult, ApiRequestOptions, ApiClientError };
-export type { Game };
+export type { Game, RecentGamesResponse, RecentGameItem, LeaderboardDto };
+

@@ -3,7 +3,11 @@
  */
 const logger = require('../utils/logger');
 const audit = require('../services/audit.service');
-const { assertWalletNetwork, getAccountBalances } = require('../services/stellar.service');
+const {
+  assertWalletNetwork,
+  getAccountBalances,
+  verifyDepositPayment,
+} = require('../services/stellar.service');
 const TransactionModel = require('../models/Transaction.model');
 const User = require('../models/User.model');
 const db = require('../config/database');
@@ -31,7 +35,7 @@ const getBalance = async (req, res, next) => {
 const deposit = async (req, res, next) => {
   try {
     validateWalletNetwork(req);
-    const { amount, asset, txHash } = req.body;
+    const { txHash, asset } = req.body;
     const walletAddress = req.user.walletAddress || req.user.address;
 
     if (!walletAddress) {
@@ -43,17 +47,6 @@ const deposit = async (req, res, next) => {
       return res.status(404).json({ message: 'User profile not found.' });
     }
 
-    const numAmount = parseFloat(amount);
-    if (Number.isNaN(numAmount) || numAmount <= 0) {
-      return res.status(400).json({ message: 'Invalid deposit amount.' });
-    }
-
-    // VAULT_ADDRESS must be a real, configured Stellar address. The old
-    // fallback here ('GA2C5RFPE6CXENJUA67TZND6L6SXY67TZND6L6SXY67TZND6L6SXY')
-    // was 53 characters, not the 56 a real G-address requires — a fabricated
-    // value dressed up to look real rather than an honest "not configured"
-    // signal. Erroring here is preferable to handing back an address nobody
-    // can actually send funds to.
     const vaultAddress = process.env.VAULT_ADDRESS;
     if (!vaultAddress) {
       const error = new Error('Deposits are not available: no vault address is configured.');
@@ -62,37 +55,102 @@ const deposit = async (req, res, next) => {
       throw error;
     }
 
-    logger.info(`Deposit request: ${amount} ${asset} for user ${user.id}`);
+    if (!txHash || typeof txHash !== 'string' || !/^[0-9a-fA-F]{64}$/.test(txHash.trim())) {
+      const error = new Error('A valid 64-character hex transaction hash (txHash) is required for deposits.');
+      error.statusCode = 400;
+      error.code = 'INVALID_TX_HASH';
+      throw error;
+    }
 
-    // Create Transaction Record
-    const tx = await TransactionModel.create({
-      user_id: user.id,
-      type: 'deposit',
-      amount: numAmount,
-      status: 'success',
-      tx_hash: txHash || '0x' + require('crypto').randomBytes(32).toString('hex'),
+    const cleanTxHash = txHash.trim().toLowerCase();
+
+    // Check for replay before calling Horizon / acquiring row lock
+    const existingTx = await db('transactions')
+      .where({ tx_hash: cleanTxHash, type: 'deposit' })
+      .first();
+    if (existingTx) {
+      const error = new Error('Deposit transaction has already been credited.');
+      error.statusCode = 409;
+      error.code = 'DEPOSIT_ALREADY_PROCESSED';
+      throw error;
+    }
+
+    // Verify on Horizon
+    const verification = await verifyDepositPayment({
+      txHash: cleanTxHash,
+      expectedSource: walletAddress,
+      expectedVault: vaultAddress,
+      expectedAsset: asset || 'XLM',
     });
 
-    // Update User Balance
-    const newBalance = parseFloat(user.balance || 0) + numAmount;
-    await db('users').where({ id: user.id }).update({
-      balance: newBalance,
-      updated_at: db.fn.now(),
+    const onChainAmount = verification.numericAmount;
+    const creditedAsset = verification.asset;
+
+    logger.info(`Deposit verified: ${onChainAmount} ${creditedAsset} for user ${user.id} (tx: ${cleanTxHash})`);
+
+    // Credit inside database transaction with row lock
+    let txRecord;
+    let finalBalance;
+
+    await db.transaction(async (trx) => {
+      // Re-check replay inside transaction with lock to guarantee uniqueness under concurrent requests
+      const txCheck = await trx('transactions')
+        .where({ tx_hash: cleanTxHash, type: 'deposit' })
+        .first();
+      if (txCheck) {
+        const err = new Error('Deposit transaction has already been credited.');
+        err.statusCode = 409;
+        err.code = 'DEPOSIT_ALREADY_PROCESSED';
+        throw err;
+      }
+
+      // Lock user row
+      const lockedUser = await trx('users')
+        .where({ id: user.id })
+        .forUpdate()
+        .first();
+
+      if (!lockedUser) {
+        const err = new Error('User not found during transaction lock.');
+        err.statusCode = 404;
+        throw err;
+      }
+
+      // Decimal-safe addition (Stellar uses 7 decimal places)
+      const currentBalance = Number(lockedUser.balance || 0);
+      const newBalanceNum = Number((currentBalance + onChainAmount).toFixed(7));
+      finalBalance = newBalanceNum;
+
+      txRecord = await TransactionModel.create(
+        {
+          user_id: user.id,
+          type: 'deposit',
+          amount: onChainAmount,
+          status: 'success',
+          tx_hash: cleanTxHash,
+        },
+        trx
+      );
+
+      await trx('users').where({ id: user.id }).update({
+        balance: newBalanceNum,
+        updated_at: trx.fn.now(),
+      });
     });
 
     res.status(200).json({
       success: true,
       depositAddress: vaultAddress,
-      amount: numAmount,
-      balance: newBalance,
-      transaction: tx,
+      amount: onChainAmount,
+      balance: finalBalance,
+      transaction: txRecord,
     });
 
     audit.log({
       actor: user.wallet_address,
       action: 'wallet.deposit',
       target: user.wallet_address,
-      payload: { amount: numAmount, asset },
+      payload: { amount: onChainAmount, asset: creditedAsset, txHash: cleanTxHash },
       outcome: 'success',
     });
   } catch (error) {

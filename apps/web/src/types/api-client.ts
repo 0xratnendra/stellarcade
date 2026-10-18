@@ -196,3 +196,50 @@ export interface LoginResponse {
   token: string;
   profile: UserProfile;
 }
+
+// ── GET /api/games/recent ───────────────────────────────────────────────────
+
+export interface RecentGameItem {
+  id: number | string;
+  user_id?: number | null;
+  game_type: string;
+  bet_amount: number | string;
+  result: string;
+  payout?: number | string;
+  created_at: string;
+  contract_id?: string | null;
+  chain_game_id?: string | number | null;
+  player_address?: string | null;
+  user_wallet?: string | null;
+  side?: string | null;
+  status?: string | null;
+  ledger?: number | null;
+  resolve_tx_hash?: string | null;
+  resolved_at?: string | null;
+  server_seed?: string;
+  commit_hash?: string;
+  client_seed?: string;
+  nonce?: number;
+  [key: string]: unknown;
+}
+
+export interface RecentGamesResponse {
+  items: RecentGameItem[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  pagination?: {
+    nextCursor?: string | null;
+    hasNextPage?: boolean;
+  };
+}
+
+// ── GET /api/leaderboard ─────────────────────────────────────────────────────
+
+export interface LeaderboardDto {
+  rank: number;
+  playerAddress: string;
+  score: string;
+}
+
