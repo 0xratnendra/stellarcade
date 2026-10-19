@@ -16,10 +16,8 @@ mod test;
 
 use soroban_sdk::{contract, contractimpl, token, Address, Bytes, BytesN, Env};
 
-pub use types::{
-    DuelPhase, Error, SealedDuel, MIN_WAGER, REVEAL_WINDOW_LEDGERS,
-};
 use types::DataKey;
+pub use types::{DuelPhase, Error, SealedDuel, MIN_WAGER, REVEAL_WINDOW_LEDGERS};
 
 #[contract]
 pub struct SealedBidDuel;
@@ -194,12 +192,21 @@ impl SealedBidDuel {
             (Some(creator_bid), Some(opponent_bid)) => {
                 // Second-price settlement: highest wager wins; the winner's
                 // price is the second (lower) bid. Excess stake is refunded.
-                let (winner, winning_bid, losing_bid, loser) =
-                    if creator_bid >= opponent_bid {
-                        (duel.creator.clone(), creator_bid, opponent_bid, duel.opponent.clone().ok_or(Error::NotReadyToFinalize)?)
-                    } else {
-                        (duel.opponent.clone().ok_or(Error::NotReadyToFinalize)?, opponent_bid, creator_bid, duel.creator.clone())
-                    };
+                let (winner, winning_bid, losing_bid, loser) = if creator_bid >= opponent_bid {
+                    (
+                        duel.creator.clone(),
+                        creator_bid,
+                        opponent_bid,
+                        duel.opponent.clone().ok_or(Error::NotReadyToFinalize)?,
+                    )
+                } else {
+                    (
+                        duel.opponent.clone().ok_or(Error::NotReadyToFinalize)?,
+                        opponent_bid,
+                        creator_bid,
+                        duel.creator.clone(),
+                    )
+                };
 
                 // Second-price settlement: the loser refunds the amount by
                 // which the winner's bid exceeds the second (losing) bid,

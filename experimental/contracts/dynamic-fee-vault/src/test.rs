@@ -5,8 +5,8 @@ use soroban_sdk::{
     token, Address, Env,
 };
 
-use crate::{DynamicFeeVault, DynamicFeeVaultClient};
 use crate::types::{Error, MIN_FEE_BPS, WINDOW_LEDGERS};
+use crate::{DynamicFeeVault, DynamicFeeVaultClient};
 
 const TIER_BRONZE: i128 = 50_000_000_000;
 const TIER_SILVER: i128 = 500_000_000_000;

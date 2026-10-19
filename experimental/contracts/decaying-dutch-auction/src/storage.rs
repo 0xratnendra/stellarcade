@@ -19,9 +19,7 @@ pub fn next_auction_id(env: &Env) -> u64 {
         .get(&DataKey::AuctionCount)
         .unwrap_or(0);
     let next = current + 1;
-    env.storage()
-        .instance()
-        .set(&DataKey::AuctionCount, &next);
+    env.storage().instance().set(&DataKey::AuctionCount, &next);
     next
 }
 

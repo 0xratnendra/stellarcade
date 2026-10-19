@@ -15,8 +15,8 @@ mod test;
 
 use soroban_sdk::{contract, contractimpl, token, Address, Env};
 
-pub use types::{Error, PlayerActivity, ACTIVITY_TTL_LEDGERS, SWEEP_TIMELOCK_LEDGERS};
 use types::DataKey;
+pub use types::{Error, PlayerActivity, ACTIVITY_TTL_LEDGERS, SWEEP_TIMELOCK_LEDGERS};
 
 #[contract]
 pub struct JackpotDrip;
@@ -136,7 +136,11 @@ impl JackpotDrip {
 
     /// Emergency sweep: admin schedules draining the pool to `recipient`.
     /// The sweep only becomes executable after the timelock window.
-    pub fn request_emergency_sweep(env: Env, admin: Address, recipient: Address) -> Result<u32, Error> {
+    pub fn request_emergency_sweep(
+        env: Env,
+        admin: Address,
+        recipient: Address,
+    ) -> Result<u32, Error> {
         storage::require_initialized(&env)?;
         admin.require_auth();
         if admin != storage::get_admin(&env) {
