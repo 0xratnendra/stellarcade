@@ -26,19 +26,29 @@ pub fn get_token(env: &Env) -> Address {
 }
 
 pub fn set_drip_rate(env: &Env, rate: i128) {
-    env.storage().instance().set(&DataKey::DripRatePerLedger, &rate);
+    env.storage()
+        .instance()
+        .set(&DataKey::DripRatePerLedger, &rate);
 }
 
 pub fn get_drip_rate(env: &Env) -> i128 {
-    env.storage().instance().get(&DataKey::DripRatePerLedger).unwrap()
+    env.storage()
+        .instance()
+        .get(&DataKey::DripRatePerLedger)
+        .unwrap()
 }
 
 pub fn get_pool_balance(env: &Env) -> i128 {
-    env.storage().instance().get(&DataKey::DripPoolBalance).unwrap_or(0)
+    env.storage()
+        .instance()
+        .get(&DataKey::DripPoolBalance)
+        .unwrap_or(0)
 }
 
 pub fn set_pool_balance(env: &Env, balance: i128) {
-    env.storage().instance().set(&DataKey::DripPoolBalance, &balance);
+    env.storage()
+        .instance()
+        .set(&DataKey::DripPoolBalance, &balance);
 }
 
 pub fn add_pool_balance(env: &Env, delta: i128) {
@@ -47,11 +57,16 @@ pub fn add_pool_balance(env: &Env, delta: i128) {
 }
 
 pub fn get_last_drip_ledger(env: &Env) -> u32 {
-    env.storage().instance().get(&DataKey::LastDripLedger).unwrap_or(0)
+    env.storage()
+        .instance()
+        .get(&DataKey::LastDripLedger)
+        .unwrap_or(0)
 }
 
 pub fn set_last_drip_ledger(env: &Env, ledger: u32) {
-    env.storage().instance().set(&DataKey::LastDripLedger, &ledger);
+    env.storage()
+        .instance()
+        .set(&DataKey::LastDripLedger, &ledger);
 }
 
 /// Index of players with recorded activity (drives proportional shares).
@@ -102,8 +117,12 @@ pub fn set_claimed_through(env: &Env, player: &Address, ledger: u32) {
 }
 
 pub fn set_sweep_request(env: &Env, recipient: &Address, eligible_at: u32) {
-    env.storage().instance().set(&DataKey::SweepRecipient, recipient);
-    env.storage().instance().set(&DataKey::SweepEligibleAt, &eligible_at);
+    env.storage()
+        .instance()
+        .set(&DataKey::SweepRecipient, recipient);
+    env.storage()
+        .instance()
+        .set(&DataKey::SweepEligibleAt, &eligible_at);
 }
 
 pub fn get_sweep_request(env: &Env) -> Option<(Address, u32)> {

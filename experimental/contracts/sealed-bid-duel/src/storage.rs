@@ -26,13 +26,21 @@ pub fn get_token(env: &Env) -> Address {
 }
 
 pub fn next_duel_id(env: &Env) -> u64 {
-    let id: u64 = env.storage().instance().get(&DataKey::NextDuelId).unwrap_or(1);
-    env.storage().instance().set(&DataKey::NextDuelId, &(id + 1));
+    let id: u64 = env
+        .storage()
+        .instance()
+        .get(&DataKey::NextDuelId)
+        .unwrap_or(1);
+    env.storage()
+        .instance()
+        .set(&DataKey::NextDuelId, &(id + 1));
     id
 }
 
 pub fn save_duel(env: &Env, duel: &SealedDuel) {
-    env.storage().persistent().set(&DataKey::Duel(duel.duel_id), duel);
+    env.storage()
+        .persistent()
+        .set(&DataKey::Duel(duel.duel_id), duel);
 }
 
 pub fn load_duel(env: &Env, duel_id: u64) -> Result<SealedDuel, Error> {

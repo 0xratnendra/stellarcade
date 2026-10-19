@@ -143,7 +143,11 @@ impl PredictionMarketDispute {
         Ok(())
     }
 
-    pub fn claim_resolution_payout(env: Env, claimant: Address, market_id: u64) -> Result<i128, Error> {
+    pub fn claim_resolution_payout(
+        env: Env,
+        claimant: Address,
+        market_id: u64,
+    ) -> Result<i128, Error> {
         storage::require_initialized(&env)?;
         claimant.require_auth();
 
@@ -183,16 +187,14 @@ impl PredictionMarketDispute {
 
     pub fn get_market_dispute_status(env: Env, market_id: u64) -> DisputeStatusSummary {
         match storage::load_market(&env, market_id) {
-            Ok(m) => {
-                DisputeStatusSummary {
-                    found: true,
-                    phase: m.phase.clone(),
-                    challenge_deadline_ledger: m.challenge_deadline_ledger,
-                    disputed: m.phase == MarketPhase::Disputed,
-                    final_outcome: m.final_outcome,
-                    payouts_frozen: m.phase != MarketPhase::Finalized,
-                }
-            }
+            Ok(m) => DisputeStatusSummary {
+                found: true,
+                phase: m.phase.clone(),
+                challenge_deadline_ledger: m.challenge_deadline_ledger,
+                disputed: m.phase == MarketPhase::Disputed,
+                final_outcome: m.final_outcome,
+                payouts_frozen: m.phase != MarketPhase::Finalized,
+            },
             Err(_) => DisputeStatusSummary {
                 found: false,
                 phase: MarketPhase::Open,

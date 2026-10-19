@@ -21,7 +21,9 @@ pub fn set_next_schedule_id(env: &Env, id: u64) {
 }
 
 pub fn get_schedule(env: &Env, schedule_id: u64) -> Option<VestingSchedule> {
-    env.storage().instance().get(&DataKey::Schedule(schedule_id))
+    env.storage()
+        .instance()
+        .get(&DataKey::Schedule(schedule_id))
 }
 
 pub fn set_schedule(env: &Env, schedule: &VestingSchedule) {
