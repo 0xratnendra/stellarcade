@@ -50,7 +50,8 @@ pub enum RngError {
 
 #[contractclient(name = "RandomGeneratorClient")]
 pub trait RandomGeneratorContract {
-    fn request_random(env: Env, caller: Address, request_id: u64, max: u64) -> Result<(), RngError>;
+    fn request_random(env: Env, caller: Address, request_id: u64, max: u64)
+        -> Result<(), RngError>;
     fn get_result(env: Env, request_id: u64) -> Result<FulfilledEntry, RngError>;
 }
 
@@ -309,7 +310,11 @@ impl CoinFlip {
         game_id: u64,
     ) -> Result<(), Error> {
         require_initialized(&env)?;
-        let paused: bool = env.storage().instance().get(&DataKey::Paused).unwrap_or(false);
+        let paused: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false);
         if paused {
             return Err(Error::Paused);
         }
@@ -772,8 +777,16 @@ impl CoinFlip {
         let rng_contract: Address = env.storage().instance().get(&DataKey::RngContract).unwrap();
         let min_wager: i128 = env.storage().instance().get(&DataKey::MinWager).unwrap();
         let max_wager: i128 = env.storage().instance().get(&DataKey::MaxWager).unwrap();
-        let house_edge_bps: i128 = env.storage().instance().get(&DataKey::HouseEdgeBps).unwrap();
-        let paused: bool = env.storage().instance().get(&DataKey::Paused).unwrap_or(false);
+        let house_edge_bps: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::HouseEdgeBps)
+            .unwrap();
+        let paused: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false);
         let refund_timeout_ledgers: u32 = env
             .storage()
             .instance()
@@ -795,7 +808,11 @@ impl CoinFlip {
     /// Query whether the contract is currently paused.
     pub fn is_paused(env: Env) -> Result<bool, Error> {
         require_initialized(&env)?;
-        Ok(env.storage().instance().get(&DataKey::Paused).unwrap_or(false))
+        Ok(env
+            .storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false))
     }
 }
 

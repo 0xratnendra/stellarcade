@@ -274,11 +274,7 @@ impl ClanTreasuryVault {
 
         let token_client = token::Client::new(&env, &storage::get_token(&env));
         let contract_address = env.current_contract_address();
-        token_client.transfer(
-            &contract_address,
-            &proposal.recipient,
-            &proposal.amount,
-        );
+        token_client.transfer(&contract_address, &proposal.recipient, &proposal.amount);
 
         ProposalExecuted {
             proposal_id,
