@@ -18,7 +18,9 @@ pub fn get_admin(env: &Env) -> Address {
 }
 
 pub fn set_nft_contract(env: &Env, nft_contract: &Address) {
-    env.storage().instance().set(&DataKey::NftContract, nft_contract);
+    env.storage()
+        .instance()
+        .set(&DataKey::NftContract, nft_contract);
 }
 
 pub fn get_nft_contract(env: &Env) -> Address {
@@ -26,7 +28,9 @@ pub fn get_nft_contract(env: &Env) -> Address {
 }
 
 pub fn save_pass(env: &Env, ticket_id: &BytesN<32>, pass: &AccessPass) {
-    env.storage().persistent().set(&DataKey::Pass(ticket_id.clone()), pass);
+    env.storage()
+        .persistent()
+        .set(&DataKey::Pass(ticket_id.clone()), pass);
 }
 
 pub fn load_pass(env: &Env, ticket_id: &BytesN<32>) -> Result<AccessPass, Error> {

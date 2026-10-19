@@ -5,8 +5,8 @@ use soroban_sdk::{
     token, Address, BytesN, Env,
 };
 
-use crate::{NftAccessPass, NftAccessPassClient};
 use crate::types::{Error, PASS_TTL_LEDGERS};
+use crate::{NftAccessPass, NftAccessPassClient};
 
 struct Setup {
     env: Env,

@@ -15,10 +15,8 @@ mod test;
 
 use soroban_sdk::{contract, contractimpl, token, Address, Env};
 
-pub use types::{
-    Error, PlayerVolume, MIN_FEE_BPS, TIER_FEES_BPS, TIER_THRESHOLDS, WINDOW_LEDGERS,
-};
 use types::DataKey;
+pub use types::{Error, PlayerVolume, MIN_FEE_BPS, TIER_FEES_BPS, TIER_THRESHOLDS, WINDOW_LEDGERS};
 
 #[contract]
 pub struct DynamicFeeVault;

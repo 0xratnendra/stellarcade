@@ -928,7 +928,10 @@ fn test_get_config_and_defaults() {
     assert_eq!(config.max_wager, 1000i128);
     assert_eq!(config.house_edge_bps, 250i128);
     assert_eq!(config.paused, false);
-    assert_eq!(config.refund_timeout_ledgers, DEFAULT_REFUND_TIMEOUT_LEDGERS);
+    assert_eq!(
+        config.refund_timeout_ledgers,
+        DEFAULT_REFUND_TIMEOUT_LEDGERS
+    );
     assert_eq!(s.flip_client.is_paused(), false);
 }
 
@@ -945,20 +948,23 @@ fn test_set_wager_limits() {
 
     // Invalid limits (min > max)
     assert_eq!(
-        s.flip_client.try_set_wager_limits(&s.admin, &500i128, &200i128),
+        s.flip_client
+            .try_set_wager_limits(&s.admin, &500i128, &200i128),
         Err(Ok(Error::InvalidConfig))
     );
 
     // Invalid limits (min <= 0)
     assert_eq!(
-        s.flip_client.try_set_wager_limits(&s.admin, &0i128, &200i128),
+        s.flip_client
+            .try_set_wager_limits(&s.admin, &0i128, &200i128),
         Err(Ok(Error::InvalidConfig))
     );
 
     // Non-admin rejected
     let attacker = Address::generate(&env);
     assert_eq!(
-        s.flip_client.try_set_wager_limits(&attacker, &20i128, &500i128),
+        s.flip_client
+            .try_set_wager_limits(&attacker, &20i128, &500i128),
         Err(Ok(Error::NotAuthorized))
     );
 }
@@ -997,12 +1003,17 @@ fn test_place_bet_blocked_when_paused() {
 
     s.flip_client.set_paused(&s.admin, &true);
 
-    let res = s.flip_client.try_place_bet(&player, &HEADS, &100i128, &1u64);
+    let res = s
+        .flip_client
+        .try_place_bet(&player, &HEADS, &100i128, &1u64);
     assert_eq!(res, Err(Ok(Error::Paused)));
 
     // Unpause and verify betting works
     s.flip_client.set_paused(&s.admin, &false);
-    assert!(s.flip_client.try_place_bet(&player, &HEADS, &100i128, &1u64).is_ok());
+    assert!(s
+        .flip_client
+        .try_place_bet(&player, &HEADS, &100i128, &1u64)
+        .is_ok());
 }
 
 #[test]
@@ -1024,7 +1035,8 @@ fn test_resolve_and_cancel_work_while_paused() {
     s.flip_client.set_paused(&s.admin, &true);
 
     // Resolve bet 1 while paused
-    s.rng_client.fulfill_random(&s.oracle, &1u64, &seed(&env, 0));
+    s.rng_client
+        .fulfill_random(&s.oracle, &1u64, &seed(&env, 0));
     assert!(s.flip_client.try_resolve_bet(&1u64).is_ok());
     let g1 = s.flip_client.get_game(&1u64);
     assert!(g1.resolved);

@@ -13,10 +13,10 @@ mod types;
 #[cfg(test)]
 mod test;
 
-use soroban_sdk::{contract, contractimpl, token, Address, Bytes, Env, BytesN};
+use soroban_sdk::{contract, contractimpl, token, Address, Bytes, BytesN, Env};
 
-pub use types::{AccessPass, Error, PASS_TTL_LEDGERS};
 use types::DataKey;
+pub use types::{AccessPass, Error, PASS_TTL_LEDGERS};
 
 #[contract]
 pub struct NftAccessPass;
@@ -56,7 +56,8 @@ impl NftAccessPass {
         // Unique ticket id: SHA256(nonce || ledger).
         let mut buf = Bytes::new(&env);
         buf.extend_from_slice(&nonce.to_be_bytes());
-        buf.extend_from_slice(&env.ledger().sequence().to_be_bytes());        let ticket_id: BytesN<32> = env.crypto().sha256(&buf).into();
+        buf.extend_from_slice(&env.ledger().sequence().to_be_bytes());
+        let ticket_id: BytesN<32> = env.crypto().sha256(&buf).into();
         let pass = AccessPass {
             ticket_id: ticket_id.clone(),
             player: player.clone(),

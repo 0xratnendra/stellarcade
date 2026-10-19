@@ -5,8 +5,8 @@ use soroban_sdk::{
     token, Address, BytesN, Env,
 };
 
-use crate::{commitment_hash, SealedBidDuel, SealedBidDuelClient};
 use crate::types::{DuelPhase, Error, MIN_WAGER, REVEAL_WINDOW_LEDGERS};
+use crate::{commitment_hash, SealedBidDuel, SealedBidDuelClient};
 
 const STAKE: i128 = 100_000;
 
@@ -59,14 +59,19 @@ fn test_both_reveal_and_highest_bidder_wins() {
     fund(&s, &opponent);
 
     // Creator wagers 80k, opponent wagers 60k (hidden until reveal).
-    let duel_id = s.client.create_duel(&creator, &commit(&s.env, 80_000, 1), &STAKE);
-    s.client.join_duel(&opponent, &duel_id, &commit(&s.env, 60_000, 2), &STAKE);
+    let duel_id = s
+        .client
+        .create_duel(&creator, &commit(&s.env, 80_000, 1), &STAKE);
+    s.client
+        .join_duel(&opponent, &duel_id, &commit(&s.env, 60_000, 2), &STAKE);
 
     let duel = s.client.get_duel(&duel_id);
     assert_eq!(duel.phase, DuelPhase::Committed);
 
-    s.client.reveal_bid(&creator, &duel_id, &80_000, &salt(&s.env, 1));
-    s.client.reveal_bid(&opponent, &duel_id, &60_000, &salt(&s.env, 2));
+    s.client
+        .reveal_bid(&creator, &duel_id, &80_000, &salt(&s.env, 1));
+    s.client
+        .reveal_bid(&opponent, &duel_id, &60_000, &salt(&s.env, 2));
 
     s.client.finalize_duel(&duel_id);
 
@@ -90,11 +95,15 @@ fn test_failure_to_reveal_in_window_forfeits() {
     fund(&s, &creator);
     fund(&s, &opponent);
 
-    let duel_id = s.client.create_duel(&creator, &commit(&s.env, 80_000, 1), &STAKE);
-    s.client.join_duel(&opponent, &duel_id, &commit(&s.env, 60_000, 2), &STAKE);
+    let duel_id = s
+        .client
+        .create_duel(&creator, &commit(&s.env, 80_000, 1), &STAKE);
+    s.client
+        .join_duel(&opponent, &duel_id, &commit(&s.env, 60_000, 2), &STAKE);
 
     // Only the creator reveals; the opponent goes silent past the deadline.
-    s.client.reveal_bid(&creator, &duel_id, &80_000, &salt(&s.env, 1));
+    s.client
+        .reveal_bid(&creator, &duel_id, &80_000, &salt(&s.env, 1));
     s.env.ledger().with_mut(|l| {
         l.sequence_number += REVEAL_WINDOW_LEDGERS;
     });
@@ -116,19 +125,27 @@ fn test_hash_salt_mismatch_rejected() {
     fund(&s, &creator);
     fund(&s, &opponent);
 
-    let duel_id = s.client.create_duel(&creator, &commit(&s.env, 80_000, 1), &STAKE);
-    s.client.join_duel(&opponent, &duel_id, &commit(&s.env, 60_000, 2), &STAKE);
+    let duel_id = s
+        .client
+        .create_duel(&creator, &commit(&s.env, 80_000, 1), &STAKE);
+    s.client
+        .join_duel(&opponent, &duel_id, &commit(&s.env, 60_000, 2), &STAKE);
 
     // Wrong salt → explicit CommitmentMismatch, reveal rejected.
-    let result = s.client.try_reveal_bid(&creator, &duel_id, &80_000, &salt(&s.env, 9));
+    let result = s
+        .client
+        .try_reveal_bid(&creator, &duel_id, &80_000, &salt(&s.env, 9));
     assert_eq!(result, Err(Ok(Error::CommitmentMismatch)));
 
     // Wrong amount with the right salt → also rejected.
-    let result = s.client.try_reveal_bid(&creator, &duel_id, &70_000, &salt(&s.env, 1));
+    let result = s
+        .client
+        .try_reveal_bid(&creator, &duel_id, &70_000, &salt(&s.env, 1));
     assert_eq!(result, Err(Ok(Error::CommitmentMismatch)));
 
     // The correct reveal still succeeds afterwards.
-    s.client.reveal_bid(&creator, &duel_id, &80_000, &salt(&s.env, 1));
+    s.client
+        .reveal_bid(&creator, &duel_id, &80_000, &salt(&s.env, 1));
 }
 
 #[test]
@@ -139,11 +156,16 @@ fn test_outsider_cannot_reveal() {
     fund(&s, &creator);
     fund(&s, &opponent);
 
-    let duel_id = s.client.create_duel(&creator, &commit(&s.env, 80_000, 1), &STAKE);
-    s.client.join_duel(&opponent, &duel_id, &commit(&s.env, 60_000, 2), &STAKE);
+    let duel_id = s
+        .client
+        .create_duel(&creator, &commit(&s.env, 80_000, 1), &STAKE);
+    s.client
+        .join_duel(&opponent, &duel_id, &commit(&s.env, 60_000, 2), &STAKE);
 
     let outsider = Address::generate(&s.env);
-    let result = s.client.try_reveal_bid(&outsider, &duel_id, &80_000, &salt(&s.env, 1));
+    let result = s
+        .client
+        .try_reveal_bid(&outsider, &duel_id, &80_000, &salt(&s.env, 1));
     assert_eq!(result, Err(Ok(Error::Unauthorized)));
 }
 
@@ -155,11 +177,17 @@ fn test_double_reveal_rejected() {
     fund(&s, &creator);
     fund(&s, &opponent);
 
-    let duel_id = s.client.create_duel(&creator, &commit(&s.env, 80_000, 1), &STAKE);
-    s.client.join_duel(&opponent, &duel_id, &commit(&s.env, 60_000, 2), &STAKE);
+    let duel_id = s
+        .client
+        .create_duel(&creator, &commit(&s.env, 80_000, 1), &STAKE);
+    s.client
+        .join_duel(&opponent, &duel_id, &commit(&s.env, 60_000, 2), &STAKE);
 
-    s.client.reveal_bid(&creator, &duel_id, &80_000, &salt(&s.env, 1));
-    let result = s.client.try_reveal_bid(&creator, &duel_id, &80_000, &salt(&s.env, 1));
+    s.client
+        .reveal_bid(&creator, &duel_id, &80_000, &salt(&s.env, 1));
+    let result = s
+        .client
+        .try_reveal_bid(&creator, &duel_id, &80_000, &salt(&s.env, 1));
     assert_eq!(result, Err(Ok(Error::AlreadyRevealed)));
 }
 
@@ -169,15 +197,24 @@ fn test_cannot_join_twice_or_own_duel() {
     let creator = Address::generate(&s.env);
     fund(&s, &creator);
 
-    let duel_id = s.client.create_duel(&creator, &commit(&s.env, 80_000, 1), &STAKE);
+    let duel_id = s
+        .client
+        .create_duel(&creator, &commit(&s.env, 80_000, 1), &STAKE);
     // Creator joining own duel.
-    let result = s.client.try_join_duel(&creator, &duel_id, &commit(&s.env, 60_000, 2), &STAKE);
+    let result = s
+        .client
+        .try_join_duel(&creator, &duel_id, &commit(&s.env, 60_000, 2), &STAKE);
     assert_eq!(result, Err(Ok(Error::AlreadyJoined)));
 
     // Stake mismatch.
     let third = Address::generate(&s.env);
     fund(&s, &third);
-    let result = s.client.try_join_duel(&third, &duel_id, &commit(&s.env, 60_000, 2), &(STAKE - MIN_WAGER));
+    let result = s.client.try_join_duel(
+        &third,
+        &duel_id,
+        &commit(&s.env, 60_000, 2),
+        &(STAKE - MIN_WAGER),
+    );
     assert_eq!(result, Err(Ok(Error::InvalidStake)));
 }
 
@@ -189,8 +226,11 @@ fn test_finalize_before_reveals_rejected() {
     fund(&s, &creator);
     fund(&s, &opponent);
 
-    let duel_id = s.client.create_duel(&creator, &commit(&s.env, 80_000, 1), &STAKE);
-    s.client.join_duel(&opponent, &duel_id, &commit(&s.env, 60_000, 2), &STAKE);
+    let duel_id = s
+        .client
+        .create_duel(&creator, &commit(&s.env, 80_000, 1), &STAKE);
+    s.client
+        .join_duel(&opponent, &duel_id, &commit(&s.env, 60_000, 2), &STAKE);
 
     let result = s.client.try_finalize_duel(&duel_id);
     assert_eq!(result, Err(Ok(Error::RevealWindowOpen)));
@@ -201,7 +241,9 @@ fn test_below_min_wager_rejected() {
     let s = setup();
     let creator = Address::generate(&s.env);
     fund(&s, &creator);
-    let result = s.client.try_create_duel(&creator, &commit(&s.env, 80_000, 1), &(MIN_WAGER - 1));
+    let result = s
+        .client
+        .try_create_duel(&creator, &commit(&s.env, 80_000, 1), &(MIN_WAGER - 1));
     assert_eq!(result, Err(Ok(Error::InvalidStake)));
 }
 
@@ -213,10 +255,15 @@ fn test_tie_goes_to_creator() {
     fund(&s, &creator);
     fund(&s, &opponent);
 
-    let duel_id = s.client.create_duel(&creator, &commit(&s.env, 80_000, 1), &STAKE);
-    s.client.join_duel(&opponent, &duel_id, &commit(&s.env, 80_000, 2), &STAKE);
-    s.client.reveal_bid(&creator, &duel_id, &80_000, &salt(&s.env, 1));
-    s.client.reveal_bid(&opponent, &duel_id, &80_000, &salt(&s.env, 2));
+    let duel_id = s
+        .client
+        .create_duel(&creator, &commit(&s.env, 80_000, 1), &STAKE);
+    s.client
+        .join_duel(&opponent, &duel_id, &commit(&s.env, 80_000, 2), &STAKE);
+    s.client
+        .reveal_bid(&creator, &duel_id, &80_000, &salt(&s.env, 1));
+    s.client
+        .reveal_bid(&opponent, &duel_id, &80_000, &salt(&s.env, 2));
     s.client.finalize_duel(&duel_id);
 
     let duel = s.client.get_duel(&duel_id);
@@ -225,4 +272,3 @@ fn test_tie_goes_to_creator() {
     assert_eq!(s.token.balance(&creator), STAKE * 2);
     assert_eq!(s.token.balance(&opponent), STAKE * 2);
 }
-

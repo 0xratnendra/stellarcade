@@ -5,8 +5,8 @@ use soroban_sdk::{
     token, Address, Env,
 };
 
-use crate::{JackpotDrip, JackpotDripClient};
 use crate::types::{Error, SWEEP_TIMELOCK_LEDGERS};
+use crate::{JackpotDrip, JackpotDripClient};
 
 const DRIP_RATE: i128 = 1_000; // tokens per ledger
 const VOLUME: i128 = 100_000;
@@ -216,6 +216,8 @@ fn test_emergency_sweep_rejects_non_admin_and_unrequested() {
 #[test]
 fn test_initialize_twice_fails() {
     let s = setup();
-    let result = s.client.try_initialize(&s.admin, &s.token.address, &DRIP_RATE);
+    let result = s
+        .client
+        .try_initialize(&s.admin, &s.token.address, &DRIP_RATE);
     assert_eq!(result, Err(Ok(Error::AlreadyInitialized)));
 }
