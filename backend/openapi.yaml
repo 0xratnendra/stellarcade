@@ -636,13 +636,13 @@
           'post':
             {
               'operationId': 'createDeposit',
-              'summary': 'Create a deposit request for the authenticated user',
+              'summary': 'Create a deposit request for the authenticated user (disabled — no verified on-chain flow yet)',
               'tags': ['Wallet'],
               'responses':
                 {
                   '200':
                     {
-                      'description': 'Deposit request accepted',
+                      'description': 'Deposit request accepted. Not reachable while the deposit flow is disabled.',
                       'content':
                         {
                           'application/json':
@@ -690,6 +690,15 @@
                             { 'schema': { '$ref': '#/components/schemas/ErrorEnvelope' } },
                         },
                     },
+                  '501':
+                    {
+                      'description': 'The deposit flow is disabled: no verified on-chain settlement flow is wired up yet, so the request is refused before anything is read from or written to the database. The error code is WALLET_FLOW_DISABLED.',
+                      'content':
+                        {
+                          'application/json':
+                            { 'schema': { '$ref': '#/components/schemas/ErrorEnvelope' } },
+                        },
+                    },
                 },
               'parameters': [{ '$ref': '#/components/parameters/IdempotencyKeyHeader' }],
               'requestBody':
@@ -709,13 +718,13 @@
           'post':
             {
               'operationId': 'createWithdrawal',
-              'summary': 'Create a withdrawal request for the authenticated user',
+              'summary': 'Create a withdrawal request for the authenticated user (disabled — no verified on-chain flow yet)',
               'tags': ['Wallet'],
               'responses':
                 {
                   '200':
                     {
-                      'description': 'Withdrawal request accepted',
+                      'description': 'Withdrawal request accepted. Not reachable while the withdrawal flow is disabled.',
                       'content':
                         {
                           'application/json':
@@ -757,6 +766,15 @@
                   '500':
                     {
                       'description': 'Unexpected server error',
+                      'content':
+                        {
+                          'application/json':
+                            { 'schema': { '$ref': '#/components/schemas/ErrorEnvelope' } },
+                        },
+                    },
+                  '501':
+                    {
+                      'description': 'The withdrawal flow is disabled: no verified on-chain settlement flow is wired up yet, so the request is refused before anything is read from or written to the database. The error code is WALLET_FLOW_DISABLED.',
                       'content':
                         {
                           'application/json':
