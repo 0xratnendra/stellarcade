@@ -13,7 +13,6 @@ DRY_RUN=false
 MIN_WAGER="10000000"      # 1 XLM (stroops, 10^7)
 MAX_WAGER="1000000000"    # 100 XLM
 BANKROLL="10000000000"
-DICE_BANKROLL="10000000000"
 DICE_BANKROLL="10000000000"    # 1,000 XLM
 HOUSE_EDGE_BPS="250"      # 2.5%
 
@@ -122,7 +121,6 @@ fi
 
 RNG_WASM="$REPO_ROOT/contracts/target/wasm32v1-none/release/stellarcade_random_generator.wasm"
 COIN_FLIP_WASM="$REPO_ROOT/contracts/target/wasm32v1-none/release/stellarcade_coin_flip.wasm"
-DICE_ROLL_WASM="$REPO_ROOT/contracts/target/wasm32v1-none/release/stellarcade_dice_roll.wasm"
 DICE_ROLL_WASM="$REPO_ROOT/contracts/target/wasm32v1-none/release/stellarcade_dice_roll.wasm"
 
 if [ ! -f "$RNG_WASM" ] || [ ! -f "$COIN_FLIP_WASM" ] || [ ! -f "$DICE_ROLL_WASM" ]; then
