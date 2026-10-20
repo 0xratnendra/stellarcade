@@ -88,3 +88,6 @@ CI runs it from `.github/workflows/testnet-smoke.yml` nightly and on
 
 
 The deployment script now builds, deploys, authorizes, initializes, and funds dice-roll alongside coin-flip, and writes contracts.diceRoll plus the dice-roll environment variable names to the deployment output.
+
+
+The deployment script now builds, deploys, authorizes, initializes, and funds dice-roll alongside coin-flip, and writes contracts.diceRoll plus the dice-roll environment variable names to the deployment output.
