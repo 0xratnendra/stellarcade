@@ -18,6 +18,7 @@ jest.mock('../../src/config/redis', () => {
 const mockVerifyDepositPayment = jest.fn();
 jest.mock('../../src/services/stellar.service', () => ({
   assertWalletNetwork: jest.fn(),
+  getAccountBalances: jest.fn(),
   verifyDepositPayment: (...args) => mockVerifyDepositPayment(...args),
 }));
 
@@ -32,37 +33,13 @@ jest.mock('../../src/services/audit.service', () => ({
   log: jest.fn().mockResolvedValue(undefined),
 }));
 
-const mockDbUpdate = jest.fn().mockResolvedValue(1);
-const mockDbFirst = jest.fn().mockResolvedValue(null);
-const mockDbForUpdate = jest.fn().mockReturnValue({ first: mockDbFirst });
-const mockDbWhere = jest.fn().mockReturnValue({
-  first: mockDbFirst,
-  update: mockDbUpdate,
-  forUpdate: mockDbForUpdate,
-});
-const mockDb = jest.fn((_table) => ({
-  where: mockDbWhere,
-  update: mockDbUpdate,
-  first: mockDbFirst,
-}));
-mockDb.fn = { now: jest.fn(() => 'NOW()') };
-mockDb.transaction = jest.fn(async (cb) => {
-  const trx = jest.fn((_table) => ({
-    where: mockDbWhere,
-    update: mockDbUpdate,
-    first: mockDbFirst,
-  }));
-  trx.fn = { now: jest.fn(() => 'NOW()') };
-  return cb(trx);
-});
-jest.mock('../../src/config/database', () => mockDb);
-
+const db = require('../../src/config/database');
 const router = require('../../src/routes/wallet.routes');
-const User = require('../../src/models/User.model');
-const TransactionModel = require('../../src/models/Transaction.model');
+const audit = require('../../src/services/audit.service');
 
-jest.mock('../../src/models/User.model');
-jest.mock('../../src/models/Transaction.model');
+const WALLET = 'GALICE1234567890';
+const STARTING_BALANCE = 10;
+const VALID_HASH = '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
 
 const app = express();
 app.use(express.json());
@@ -71,119 +48,77 @@ app.use((err, req, res, _next) => {
   res.status(err.statusCode || 500).json({ error: { message: err.message, code: err.code } });
 });
 
-describe('POST /wallet/deposit', () => {
-  const originalVaultAddress = process.env.VAULT_ADDRESS;
-  const validHash = '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
+/**
+ * The deposit endpoint is disabled until a verified on-chain settlement flow
+ * replaces it (issue #1400): it used to credit `users.balance` with whatever
+ * the client sent, so any signed-in player could mint balance for themselves.
+ *
+ * These tests run against the real in-memory database, so "the balance is
+ * unchanged" is checked against the row that is actually stored, not against
+ * a mock that was never asked to change anything.
+ */
+describe('POST /wallet/deposit (flow disabled)', () => {
+  beforeAll(async () => {
+    await db.migrate.latest();
+  });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
-    mockDbUpdate.mockResolvedValue(1);
-    mockDbFirst.mockResolvedValue(null);
+    await db('transactions').del();
+    await db('users').del();
+    await db('users').insert({
+      wallet_address: WALLET,
+      username: 'alice',
+      balance: STARTING_BALANCE,
+    });
   });
 
-  afterEach(() => {
-    process.env.VAULT_ADDRESS = originalVaultAddress;
+  afterAll(async () => {
+    await db.destroy();
   });
 
-  test('503s with an honest error when no vault address is configured', async () => {
-    delete process.env.VAULT_ADDRESS;
-    User.findByWallet.mockResolvedValue({
-      id: 1,
-      wallet_address: 'GALICE1234567890',
-      balance: '10',
-    });
+  test('501s with WALLET_FLOW_DISABLED instead of accepting a deposit', async () => {
+    const res = await request(app).post('/wallet/deposit').send({ txHash: VALID_HASH });
 
-    const res = await request(app).post('/wallet/deposit').send({ txHash: validHash });
-
-    expect(res.status).toBe(503);
-    expect(res.body.error.code).toBe('VAULT_NOT_CONFIGURED');
+    expect(res.status).toBe(501);
+    expect(res.body.error.code).toBe('WALLET_FLOW_DISABLED');
+    expect(res.body.error.message).toMatch(/not available yet/i);
   });
 
-  test('400s when txHash is missing or invalid hex length', async () => {
-    process.env.VAULT_ADDRESS = 'G' + 'A'.repeat(55);
-    User.findByWallet.mockResolvedValue({
-      id: 1,
-      wallet_address: 'GALICE1234567890',
-      balance: '10',
-    });
-
-    const res1 = await request(app).post('/wallet/deposit').send({});
-    expect(res1.status).toBe(400);
-    expect(res1.body.error.code).toBe('INVALID_TX_HASH');
-
-    const res2 = await request(app).post('/wallet/deposit').send({ txHash: 'short' });
-    expect(res2.status).toBe(400);
-    expect(res2.body.error.code).toBe('INVALID_TX_HASH');
-  });
-
-  test('409s when deposit hash was already processed (replay protection)', async () => {
-    process.env.VAULT_ADDRESS = 'G' + 'A'.repeat(55);
-    User.findByWallet.mockResolvedValue({
-      id: 1,
-      wallet_address: 'GALICE1234567890',
-      balance: '10',
-    });
-    mockDbFirst.mockResolvedValueOnce({ id: 5, tx_hash: validHash });
-
-    const res = await request(app).post('/wallet/deposit').send({ txHash: validHash });
-
-    expect(res.status).toBe(409);
-    expect(res.body.error.code).toBe('DEPOSIT_ALREADY_PROCESSED');
-  });
-
-  test('verifies on-chain payment, credits verified amount, and locks user row', async () => {
-    process.env.VAULT_ADDRESS = 'G' + 'A'.repeat(55);
-    User.findByWallet.mockResolvedValue({
-      id: 1,
-      wallet_address: 'GALICE1234567890',
-      balance: '10',
-    });
-    // First call to first() -> replay check in outer db (null)
-    // Second call -> replay check inside trx (null)
-    // Third call -> lockedUser inside trx ({ id: 1, balance: '10.5000000' })
-    mockDbFirst
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ id: 1, balance: '10.5000000' });
-
-    mockVerifyDepositPayment.mockResolvedValue({
-      valid: true,
-      amount: '25.0000000',
-      numericAmount: 25.0,
-      asset: 'XLM',
-      txHash: validHash,
-      ledger: 1000,
-    });
-
-    TransactionModel.create.mockResolvedValue({
-      id: 99,
-      type: 'deposit',
-      amount: 25.0,
-      tx_hash: validHash,
-    });
-
+  test('leaves the balance exactly as it was', async () => {
     const res = await request(app)
       .post('/wallet/deposit')
-      .send({ txHash: validHash, amount: 999 }); // amount 999 should be ignored
+      .send({ txHash: VALID_HASH, amount: 999 });
 
-    expect(res.status).toBe(200);
-    expect(res.body.amount).toBe(25.0);
-    expect(res.body.balance).toBe(35.5);
-    expect(res.body.depositAddress).toBe(process.env.VAULT_ADDRESS);
-    expect(mockVerifyDepositPayment).toHaveBeenCalledWith({
-      txHash: validHash,
-      expectedSource: 'GALICE1234567890',
-      expectedVault: process.env.VAULT_ADDRESS,
-      expectedAsset: 'XLM',
-    });
+    expect(res.status).toBe(501);
+
+    const user = await db('users').where({ wallet_address: WALLET }).first();
+    expect(Number(user.balance)).toBe(STARTING_BALANCE);
   });
 
-  test('404s when the authenticated wallet has no profile yet', async () => {
-    process.env.VAULT_ADDRESS = 'G' + 'A'.repeat(55);
-    User.findByWallet.mockResolvedValue(null);
+  test('writes no transaction record', async () => {
+    await request(app).post('/wallet/deposit').send({ txHash: VALID_HASH });
 
-    const res = await request(app).post('/wallet/deposit').send({ txHash: validHash });
+    const transactions = await db('transactions').select('*');
+    expect(transactions).toHaveLength(0);
+  });
 
-    expect(res.status).toBe(404);
+  test('never looks the payment up on Horizon', async () => {
+    await request(app).post('/wallet/deposit').send({ txHash: VALID_HASH });
+
+    expect(mockVerifyDepositPayment).not.toHaveBeenCalled();
+  });
+
+  test('writes no audit row for a request that was never served', async () => {
+    await request(app).post('/wallet/deposit').send({ txHash: VALID_HASH });
+
+    expect(audit.log).not.toHaveBeenCalled();
+  });
+
+  test('refuses the request whatever the body says', async () => {
+    const res = await request(app).post('/wallet/deposit').send({ amount: 999 });
+
+    expect(res.status).toBe(501);
+    expect(res.body.error.code).toBe('WALLET_FLOW_DISABLED');
   });
 });

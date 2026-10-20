@@ -1,5 +1,10 @@
 const express = require('express');
-const { getBalance, deposit, withdraw } = require('../controllers/wallet.controller');
+const {
+  getBalance,
+  deposit,
+  withdraw,
+  WALLET_FLOW_ENABLED,
+} = require('../controllers/wallet.controller');
 const auth = require('../middleware/auth.middleware');
 const idempotency = require('../middleware/idempotency.middleware');
 const { rateLimit } = require('../middleware/rate-limit.middleware');
@@ -9,11 +14,20 @@ const validate = require('../middleware/validation.middleware');
 
 const router = express.Router();
 
-const amountValidation = [
-  body('amount')
-    .isFloat({ min: 0.0000001 })
-    .withMessage('Amount must be positive and greater than 0'),
-];
+/**
+ * Body validation for the withdraw endpoint.
+ *
+ * The deposit/withdraw flow is disabled (issue #1400): both endpoints answer
+ * 501 `WALLET_FLOW_DISABLED` before they look at the request body, so the
+ * amount check only applies once the flow is switched back on.
+ */
+const amountValidation = WALLET_FLOW_ENABLED
+  ? [
+      body('amount')
+        .isFloat({ min: 0.0000001 })
+        .withMessage('Amount must be positive and greater than 0'),
+    ]
+  : [];
 
 const routeDocs = [
   {
@@ -71,7 +85,8 @@ const routeDocs = [
     method: 'post',
     path: '/deposit',
     operationId: 'createDeposit',
-    summary: 'Create a deposit request for the authenticated user',
+    summary:
+      'Create a deposit request for the authenticated user (disabled — no verified on-chain flow yet)',
     tags: ['Wallet'],
     requestBody: {
       required: true,
@@ -83,7 +98,7 @@ const routeDocs = [
     },
     responses: {
       200: {
-        description: 'Deposit request accepted',
+        description: 'Deposit request accepted. Not reachable while the deposit flow is disabled.',
         content: {
           'application/json': {
             schema: { $ref: '#/components/schemas/DepositResponse' },
@@ -122,13 +137,25 @@ const routeDocs = [
           },
         },
       },
+      501: {
+        description:
+          'The deposit flow is disabled: no verified on-chain settlement flow is wired up yet, ' +
+          'so the request is refused before anything is read from or written to the database. ' +
+          'The error code is WALLET_FLOW_DISABLED.',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorEnvelope' },
+          },
+        },
+      },
     },
   },
   {
     method: 'post',
     path: '/withdraw',
     operationId: 'createWithdrawal',
-    summary: 'Create a withdrawal request for the authenticated user',
+    summary:
+      'Create a withdrawal request for the authenticated user (disabled — no verified on-chain flow yet)',
     tags: ['Wallet'],
     requestBody: {
       required: true,
@@ -140,7 +167,8 @@ const routeDocs = [
     },
     responses: {
       200: {
-        description: 'Withdrawal request accepted',
+        description:
+          'Withdrawal request accepted. Not reachable while the withdrawal flow is disabled.',
         content: {
           'application/json': {
             schema: { $ref: '#/components/schemas/WithdrawResponse' },
@@ -179,18 +207,23 @@ const routeDocs = [
           },
         },
       },
+      501: {
+        description:
+          'The withdrawal flow is disabled: no verified on-chain settlement flow is wired up yet, ' +
+          'so the request is refused before anything is read from or written to the database. ' +
+          'The error code is WALLET_FLOW_DISABLED.',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorEnvelope' },
+          },
+        },
+      },
     },
   },
 ];
 
 router.get('/:address/balance', rateLimit('wallet'), getBalance);
-router.post(
-  '/deposit',
-  auth,
-  rateLimit('wallet'),
-  idempotency,
-  deposit
-);
+router.post('/deposit', auth, rateLimit('wallet'), idempotency, deposit);
 router.post(
   '/withdraw',
   auth,
