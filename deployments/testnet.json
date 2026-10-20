@@ -1,11 +1,12 @@
 {
-  "network": "testnet",
-  "rpcUrl": "https://soroban-testnet.stellar.org",
-  "networkPassphrase": "Test SDF Network ; September 2015",
-  "contracts": {
-    "coinFlip": "CD2JPFUCKNDMA3OVYVQOAELTMR5VQPMAA6J6GJYQE2SQFNGKCBSSOKG5",
-    "randomGenerator": "CD3VAX3DZEGWEMMPK35MYPS43HMFTNHZK5SY22JLEHHENXJATWP4HJY5"
-  },
-  "nativeToken": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
-  "deployedAt": "2026-10-16T18:20:00Z"
+    "network":  "testnet",
+    "rpcUrl":  "https://soroban-testnet.stellar.org",
+    "networkPassphrase":  "Test SDF Network ; September 2015",
+    "contracts":  {
+                      "coinFlip":  "CD2JPFUCKNDMA3OVYVQOAELTMR5VQPMAA6J6GJYQE2SQFNGKCBSSOKG5",
+                      "randomGenerator":  "CD3VAX3DZEGWEMMPK35MYPS43HMFTNHZK5SY22JLEHHENXJATWP4HJY5",
+                      "diceRoll":  ""
+                  },
+    "nativeToken":  "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+    "deployedAt":  "2026-10-16T18:20:00Z"
 }
