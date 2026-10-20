@@ -85,3 +85,6 @@ node scripts/smoke/coin-flip-round.mjs \
 
 CI runs it from `.github/workflows/testnet-smoke.yml` nightly and on
 `workflow_dispatch` (not on pull requests). A failed step fails the job.
+
+
+The deployment script now builds, deploys, authorizes, initializes, and funds dice-roll alongside coin-flip, and writes contracts.diceRoll plus the dice-roll environment variable names to the deployment output.
