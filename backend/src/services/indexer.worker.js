@@ -1,14 +1,4 @@
-/**
- * Coin-flip event indexer.
- *
- * Polls the coin-flip contract's BetPlaced and BetResolved events from a
- * persisted cursor and mirrors them into the games table, so history,
- * leaderboard and portfolio reads reflect real on-chain rounds.
- *
- * Rows are keyed by (contract_id, chain_game_id): BetPlaced inserts a pending
- * row only if none exists, and BetResolved only moves a pending row to
- * resolved, so replaying any batch of events changes nothing.
- */
+
 const StellarSdk = require('@stellar/stellar-sdk');
 const logger = require('../utils/logger');
 
