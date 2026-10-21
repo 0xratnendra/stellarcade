@@ -277,7 +277,7 @@ impl DiceRoll {
         // Read RNG result
         let rng_addr: Address = env.storage().instance().get(&DataKey::RngContract).unwrap();
         let rng_client = RandomGeneratorClient::new(&env, &rng_addr);
-        let fulfilled = rng_client.try_get_result(&game_id);
+        let fulfilled = rng_client.try_get_result(&env.current_contract_address(), &game_id);
         let entry = match fulfilled {
             Ok(Ok(e)) => e,
             _ => return Err(Error::RngNotFulfilled),
