@@ -59,7 +59,7 @@ const MISSION_PILLARS = [
   {
     icon: ShieldCheck,
     title: "Provably Fair by Design",
-    body: "Every game round outcome is derived deterministically from the combination of a secret server seed, player client seed, per-round nonce, and live Stellar ledger hash.",
+    body: "Every round outcome is derived on-chain by the random-generator contract's commit-reveal scheme: the oracle's seed is hashed and committed before your bet, and the result follows from that seed and the round id alone.",
   },
   {
     icon: Lock,
@@ -80,19 +80,24 @@ const MISSION_PILLARS = [
 
 const FAIRNESS_STEPS = [
   {
-    step: "Step 1: Commitment",
-    title: "Server Commitment",
-    body: "Before you wager, the server generates a secret seed and publishes its cryptographic SHA-256 hash (commitHash), locking its value in advance.",
+    step: "Step 1: Commit",
+    title: "Oracle commits a hidden seed",
+    body: "Before any bet exists, the oracle publishes sha256(seed) to the random-generator contract. The seed itself stays hidden — SHA-256 cannot be reversed to recover it.",
   },
   {
-    step: "Step 2: Entropy Mix",
-    title: "Client & Ledger Seed",
-    body: "Your client provides a client seed, combines it with the current Stellar ledger hash and round nonce. Neither party can unilaterally dictate entropy.",
+    step: "Step 2: Lock",
+    title: "Your bet claims that commitment",
+    body: "place_bet pops the oldest commitment from the on-chain queue and binds it to your game id in the same transaction. With an empty queue the bet fails, so no round runs without a commitment.",
   },
   {
-    step: "Step 3: Verification",
-    title: "Client Verification",
-    body: "After settlement, the server reveals serverSeed. You can independently verify that the seed matches the commitment and recompute the final outcome offline.",
+    step: "Step 3: Reveal",
+    title: "The contract derives the result",
+    body: "fulfill_random re-hashes the revealed seed and rejects it unless it equals the commitment, then computes sha256(seed ‖ round id) — first 8 bytes as big-endian, mod 2. 0 is Heads, 1 is Tails.",
+  },
+  {
+    step: "Step 4: Verify",
+    title: "Recompute it yourself",
+    body: "Open the verifier with a round id: it reruns the contract's exact formula in your browser and checks the seed, the commitment and the stored result. No server involved.",
   },
 ];
 
@@ -162,10 +167,10 @@ export default function AboutPage() {
         <SectionIntro
           icon={Scale}
           title="How Provable Fairness Works"
-          description="Neither the server nor the player can manipulate round results."
+          description="Commit-reveal, exactly as the random-generator and coin-flip contracts implement it."
         />
 
-        <ol className="grid gap-4 md:grid-cols-3">
+        <ol className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {FAIRNESS_STEPS.map((item) => (
             <li key={item.step} className="rounded-xl border border-border/60 bg-background/50 p-5">
               <span className="block text-[11px] font-bold tracking-[0.12em] text-primary uppercase">
@@ -177,13 +182,33 @@ export default function AboutPage() {
           ))}
         </ol>
 
-        <div>
+        <div className="rounded-xl border border-border/60 bg-background/50 p-5" data-testid="fairness-limits">
+          <span className="block text-[11px] font-bold tracking-[0.12em] text-foreground uppercase">
+            What it does not cover
+          </span>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
+            Commit-reveal fixes the seed before your bet; it cannot force the oracle to reveal it. A round the
+            oracle never fulfils stays pending — after <span className="font-mono">RefundTimeoutLedgers</span>{" "}
+            (17,280 ledgers, about 24 hours) you call{" "}
+            <span className="font-mono">cancel_stale_bet</span> to reclaim your full wager, and a refunded game
+            can never be resolved afterwards, so you get a refund or a payout, never both. The oracle also knows
+            the seeds it commits; only SHA-256 preimage resistance keeps them secret from everyone else.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
           <Button asChild size="sm" variant="brand">
             <Link href="/verify">
               Launch Interactive Fairness Verifier
               <ArrowRight />
             </Link>
           </Button>
+          <Link
+            href="/verify#how-it-works"
+            className="text-xs font-semibold text-primary underline transition-opacity hover:opacity-80"
+          >
+            Read the four steps in plain language
+          </Link>
         </div>
       </section>
 
