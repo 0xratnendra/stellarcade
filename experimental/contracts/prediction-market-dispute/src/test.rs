@@ -5,8 +5,8 @@ use soroban_sdk::{
     token, Address, Env,
 };
 
-use crate::{PredictionMarketDispute, PredictionMarketDisputeClient};
 use crate::types::{Error, MarketPhase, CHALLENGE_WINDOW_LEDGERS};
+use crate::{PredictionMarketDispute, PredictionMarketDisputeClient};
 
 const BOND: i128 = 1_000;
 

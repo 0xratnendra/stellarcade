@@ -12,6 +12,36 @@ const TransactionModel = require('../models/Transaction.model');
 const User = require('../models/User.model');
 const db = require('../config/database');
 
+/**
+ * The deposit and withdraw endpoints are switched off until a verified
+ * on-chain settlement flow replaces them (issue #1400).
+ *
+ * `POST /wallet/deposit` used to credit `users.balance` with whatever
+ * `amount` the client sent, and `POST /wallet/withdraw` debited the
+ * balance, recorded a made-up transaction hash and reported the withdrawal
+ * as `completed` without sending anything on-chain. Both were reachable by
+ * any signed-in player, so either one could mint or burn balance at will.
+ *
+ * The implementations below are kept — the deposit one already verifies the
+ * payment against Horizon before it credits anything — but the endpoints
+ * refuse every request until the flow is switched back on, so no request can
+ * change `users.balance`.
+ */
+const WALLET_FLOW_ENABLED = false;
+
+/**
+ * Raised when a client calls the deposit/withdraw endpoints while the
+ * on-chain settlement flow is still disabled.
+ */
+class WalletFlowDisabledError extends Error {
+  constructor(operation) {
+    super(`${operation} are not available yet: the on-chain settlement flow is not enabled yet.`);
+    this.name = 'WalletFlowDisabledError';
+    this.statusCode = 501;
+    this.code = 'WALLET_FLOW_DISABLED';
+  }
+}
+
 const validateWalletNetwork = (req) => {
   const expectedNetwork = process.env.STELLAR_NETWORK || 'testnet';
   const walletNetwork = req.headers['x-wallet-network'];
@@ -33,6 +63,12 @@ const getBalance = async (req, res, next) => {
 };
 
 const deposit = async (req, res, next) => {
+  // Refuse before anything else runs: no database read, no balance write,
+  // and no audit row for a request that is never going to be served.
+  if (!WALLET_FLOW_ENABLED) {
+    return next(new WalletFlowDisabledError('Deposits'));
+  }
+
   try {
     validateWalletNetwork(req);
     const { txHash, asset } = req.body;
@@ -56,7 +92,9 @@ const deposit = async (req, res, next) => {
     }
 
     if (!txHash || typeof txHash !== 'string' || !/^[0-9a-fA-F]{64}$/.test(txHash.trim())) {
-      const error = new Error('A valid 64-character hex transaction hash (txHash) is required for deposits.');
+      const error = new Error(
+        'A valid 64-character hex transaction hash (txHash) is required for deposits.'
+      );
       error.statusCode = 400;
       error.code = 'INVALID_TX_HASH';
       throw error;
@@ -86,7 +124,9 @@ const deposit = async (req, res, next) => {
     const onChainAmount = verification.numericAmount;
     const creditedAsset = verification.asset;
 
-    logger.info(`Deposit verified: ${onChainAmount} ${creditedAsset} for user ${user.id} (tx: ${cleanTxHash})`);
+    logger.info(
+      `Deposit verified: ${onChainAmount} ${creditedAsset} for user ${user.id} (tx: ${cleanTxHash})`
+    );
 
     // Credit inside database transaction with row lock
     let txRecord;
@@ -105,10 +145,7 @@ const deposit = async (req, res, next) => {
       }
 
       // Lock user row
-      const lockedUser = await trx('users')
-        .where({ id: user.id })
-        .forUpdate()
-        .first();
+      const lockedUser = await trx('users').where({ id: user.id }).forUpdate().first();
 
       if (!lockedUser) {
         const err = new Error('User not found during transaction lock.');
@@ -166,6 +203,12 @@ const deposit = async (req, res, next) => {
 };
 
 const withdraw = async (req, res, next) => {
+  // Refuse before anything else runs: no database read, no balance write,
+  // and no audit row for a request that is never going to be served.
+  if (!WALLET_FLOW_ENABLED) {
+    return next(new WalletFlowDisabledError('Withdrawals'));
+  }
+
   try {
     validateWalletNetwork(req);
     const { amount, destination } = req.body;
@@ -191,13 +234,18 @@ const withdraw = async (req, res, next) => {
 
     logger.info(`Withdrawal request: ${amount} to ${destination} from user ${user.id}`);
 
-    // Create Transaction Record
+    // Create Transaction Record.
+    //
+    // A verified implementation records the hash of the Stellar transaction
+    // it actually submitted here (64 hex characters, no `0x` prefix). Until
+    // such a transaction exists there is no honest hash to store, so the
+    // column is left null rather than filled with a made-up one.
     const tx = await TransactionModel.create({
       user_id: user.id,
       type: 'withdrawal',
       amount: numAmount,
       status: 'success',
-      tx_hash: '0x' + require('crypto').randomBytes(32).toString('hex'),
+      tx_hash: null,
     });
 
     // Update User Balance
@@ -239,4 +287,6 @@ module.exports = {
   getBalance,
   deposit,
   withdraw,
+  WalletFlowDisabledError,
+  WALLET_FLOW_ENABLED,
 };

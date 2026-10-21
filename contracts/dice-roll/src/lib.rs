@@ -1,23 +1,3 @@
-//! Stellarcade Dice Roll Contract
-//!
-//! A dice betting game integrated with the Random Generator contract.
-//! Players predict a face (1–6), place a wager, and an oracle resolves
-//! the outcome via the RNG contract's request/fulfill model.
-//!
-//! ## Game Flow
-//! 1. Player calls `roll` → tokens transfer in, RNG requested, game stored.
-//! 2. Oracle fulfills randomness on the RNG contract (off-chain step).
-//! 3. Anyone calls `resolve_roll` → reads RNG result, settles payout.
-//!
-//! ## Payout
-//! A correct prediction pays `6 * wager - fee`, where the fee is
-//! `wager * house_edge_bps / 10000` applied to the winnings portion
-//! (5 * wager). For example, at 250 bps (2.5%) and a 100-token wager,
-//! winnings = 500, fee = 500 * 250 / 10000 = 12, payout = 600 - 12 = 588.
-//!
-//! ## House Edge
-//! Configured at init via `house_edge_bps` (basis points). Applied only
-//! to the profit portion of a winning bet (5 * wager).
 #![no_std]
 #![allow(unexpected_cfgs)]
 

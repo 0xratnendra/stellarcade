@@ -11,8 +11,6 @@ const { getDeepHealth } = require('../controllers/health.controller');
 
 const router = express.Router();
 
-// Define V1 routes
-// Default health check endpoint
 const healthCheck = (req, res) => {
   res.status(200).json({
     status: 'Operational',
@@ -21,7 +19,6 @@ const healthCheck = (req, res) => {
   });
 };
 
-// Define V1 routes
 const v1Router = express.Router();
 v1Router.get('/health', healthCheck);
 v1Router.get('/health/deep', getDeepHealth);
@@ -34,10 +31,8 @@ v1Router.use('/quests', questsRoutes);
 v1Router.use('/tournaments', tournamentsRoutes);
 v1Router.use('/webhook', webhookRoutes);
 
-// Mount V1 router under /v1
 router.use('/v1', v1Router);
 
-// Maintain backward compatibility for legacy /api/* routes
 router.get('/health', healthCheck);
 router.get('/health/deep', getDeepHealth);
 router.use('/auth', authRoutes);

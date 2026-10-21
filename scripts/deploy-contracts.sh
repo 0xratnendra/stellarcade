@@ -12,7 +12,8 @@ FRESH=false
 DRY_RUN=false
 MIN_WAGER="10000000"      # 1 XLM (stroops, 10^7)
 MAX_WAGER="1000000000"    # 100 XLM
-BANKROLL="10000000000"    # 1,000 XLM
+BANKROLL="10000000000"
+DICE_BANKROLL="10000000000"    # 1,000 XLM
 HOUSE_EDGE_BPS="250"      # 2.5%
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -32,6 +33,8 @@ Options:
   --min-wager <amount>   Minimum allowed wager in stroops (default: 10000000)
   --max-wager <amount>   Maximum allowed wager in stroops (default: 1000000000)
   --bankroll <amount>    Initial bankroll funding in stroops (default: 10000000000)
+  --dice-bankroll <amount> Initial dice-roll bankroll in stroops (default: 10000000000)
+  --dice-bankroll <amount> Initial dice-roll bankroll in stroops (default: 10000000000)
   --help                 Show this help message
 EOF
   exit 1
@@ -47,6 +50,7 @@ while [[ "$#" -gt 0 ]]; do
     --min-wager) MIN_WAGER="$2"; shift ;;
     --max-wager) MAX_WAGER="$2"; shift ;;
     --bankroll) BANKROLL="$2"; shift ;;
+    --dice-bankroll) DICE_BANKROLL="$2"; shift ;;
     --help) usage ;;
     *) echo "Unknown parameter: $1"; usage ;;
   esac
@@ -84,7 +88,7 @@ if [ "$DRY_RUN" = true ]; then
 
   # 3. Check WASM artifacts
   echo "Checking WASM artifacts..."
-  for crate in "random-generator" "coin-flip"; do
+  for crate in "random-generator" "coin-flip" "dice-roll"; do
     wasm="$REPO_ROOT/contracts/target/wasm32v1-none/release/stellarcade_${crate//-/_}.wasm"
     if [ ! -f "$wasm" ]; then
       echo "  [!] Missing: $wasm (Run with --build?)"
@@ -111,13 +115,15 @@ if [ "$BUILD" = true ]; then
   cd "$REPO_ROOT/contracts"
   cargo build -p stellarcade-random-generator --target wasm32v1-none --release --locked
   cargo build -p stellarcade-coin-flip --target wasm32v1-none --release --locked
+  cargo build -p stellarcade-dice-roll --target wasm32v1-none --release --locked
   cd "$REPO_ROOT"
 fi
 
 RNG_WASM="$REPO_ROOT/contracts/target/wasm32v1-none/release/stellarcade_random_generator.wasm"
 COIN_FLIP_WASM="$REPO_ROOT/contracts/target/wasm32v1-none/release/stellarcade_coin_flip.wasm"
+DICE_ROLL_WASM="$REPO_ROOT/contracts/target/wasm32v1-none/release/stellarcade_dice_roll.wasm"
 
-if [ ! -f "$RNG_WASM" ] || [ ! -f "$COIN_FLIP_WASM" ]; then
+if [ ! -f "$RNG_WASM" ] || [ ! -f "$COIN_FLIP_WASM" ] || [ ! -f "$DICE_ROLL_WASM" ]; then
   echo "[!] Error: WASM artifacts not found. Please run with --build."
   exit 1
 fi
@@ -153,6 +159,15 @@ COIN_FLIP_ID=$(stellar contract deploy \
   --network "$NETWORK")
 echo "  [✓] coin-flip deployed at: $COIN_FLIP_ID"
 
+
+# 3. Deploy dice-roll using the same RNG, token, and wager configuration.
+echo "Deploying dice-roll..."
+DICE_ROLL_ID=$(stellar contract deploy --wasm "$DICE_ROLL_WASM" --source "$SOURCE" --network "$NETWORK")
+echo "  [âœ“] dice-roll deployed at: $DICE_ROLL_ID"
+stellar contract invoke --id "$RNG_ID" --source "$SOURCE" --network "$NETWORK" -- authorize --admin "$ADMIN_ADDR" --caller "$DICE_ROLL_ID"
+stellar contract invoke --id "$DICE_ROLL_ID" --source "$SOURCE" --network "$NETWORK" -- init --admin "$ADMIN_ADDR" --rng_contract "$RNG_ID" --token "$NATIVE_SAC" --min_wager "$MIN_WAGER" --max_wager "$MAX_WAGER" --house_edge_bps "$HOUSE_EDGE_BPS"
+echo "Funding dice-roll bankroll ($DICE_BANKROLL stroops)..."
+stellar contract invoke --id "$DICE_ROLL_ID" --source "$SOURCE" --network "$NETWORK" -- fund_house --admin "$ADMIN_ADDR" --amount "$DICE_BANKROLL"
 # Native XLM SAC on testnet
 NATIVE_SAC="CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
 
@@ -215,7 +230,9 @@ cat <<EOF > "$DEPLOYMENTS_FILE"
   "networkPassphrase": "Test SDF Network ; September 2015",
   "contracts": {
     "coinFlip": "$COIN_FLIP_ID",
-    "randomGenerator": "$RNG_ID"
+    "randomGenerator": "$RNG_ID",
+    "diceRoll": "$DICE_ROLL_ID"
+    "diceRoll": "$DICE_ROLL_ID"
   },
   "nativeToken": "$NATIVE_SAC",
   "deployedAt": "$DEPLOYED_AT"
@@ -230,6 +247,7 @@ echo "apps/web/.env.local:"
 echo "NEXT_PUBLIC_STELLAR_NETWORK=$NETWORK"
 echo "NEXT_PUBLIC_SOROBAN_RPC_URL=https://soroban-testnet.stellar.org"
 echo "NEXT_PUBLIC_COIN_FLIP_CONTRACT_ID=$COIN_FLIP_ID"
+echo "NEXT_PUBLIC_DICE_ROLL_CONTRACT_ID=$DICE_ROLL_ID"
 echo "NEXT_PUBLIC_RANDOM_GENERATOR_CONTRACT_ID=$RNG_ID"
 echo "NEXT_PUBLIC_NATIVE_SAC_ID=$NATIVE_SAC"
 echo ""
@@ -237,5 +255,6 @@ echo "backend/.env:"
 echo "STELLAR_NETWORK=$NETWORK"
 echo "SOROBAN_RPC_URL=https://soroban-testnet.stellar.org"
 echo "COIN_FLIP_CONTRACT_ID=$COIN_FLIP_ID"
+echo "DICE_ROLL_CONTRACT_ID=$DICE_ROLL_ID"
 echo "RANDOM_GENERATOR_CONTRACT_ID=$RNG_ID"
 echo "============================================="

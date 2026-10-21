@@ -200,6 +200,21 @@ function mapApiError(
     });
   }
 
+  if (status === 501) {
+    return makeClientError({
+      code: "API_SERVER_ERROR",
+      // The backend answers 501 WALLET_FLOW_DISABLED for the endpoints that
+      // are not switched on yet, and its message names the flow, so keep it.
+      message,
+      category: ApiErrorCategory.SERVER,
+      // A feature that is not implemented yet does not become implemented by
+      // asking again.
+      severity: ErrorSeverity.TERMINAL,
+      status,
+      originalMessage: message,
+    });
+  }
+
   if (status >= 500) {
     return makeClientError({
       code: "API_SERVER_ERROR",
@@ -265,6 +280,49 @@ function makeValidationError(message: string): ApiClientError {
   });
 }
 
+/**
+ * The backend's deposit and withdraw endpoints are switched off until a
+ * verified on-chain settlement flow replaces them: they answer 501
+ * `WALLET_FLOW_DISABLED` without reading or writing any balance. The web app
+ * must not offer the action, so the client refuses here instead of sending a
+ * request that is guaranteed to fail.
+ */
+function makeWalletFlowDisabledError(operation: string): ApiClientError {
+  return makeClientError({
+    code: "API_SERVER_ERROR",
+    message: `${operation} is not available yet.`,
+    category: ApiErrorCategory.SERVER,
+    // Nothing about a disabled flow is fixed by trying again.
+    severity: ErrorSeverity.TERMINAL,
+    status: 501,
+  });
+}
+
+/**
+ * One on-chain game round as indexed by the backend's event indexer:
+ * `GET /api/games/:contractId/:id`. Amounts are XLM units with 7 decimals,
+ * `chain_game_id` is the on-chain u64 as a decimal string.
+ */
+export interface IndexedGameResponse {
+  id?: number;
+  user_id?: number | null;
+  game_type: string;
+  bet_amount: string;
+  payout: string;
+  result: string;
+  status: string;
+  contract_id: string;
+  chain_game_id: string;
+  player_address?: string | null;
+  side?: string | null;
+  ledger?: number | null;
+  tx_hash?: string | null;
+  resolve_tx_hash?: string | null;
+  resolved_at?: string | null;
+  created_at?: string;
+  [key: string]: unknown;
+}
+
 export class ApiClient {
   private readonly _baseUrl: string;
   private readonly _sessionStore?: SessionStore;
@@ -308,6 +366,34 @@ export class ApiClient {
     return this._request(
       "GET",
       `/games/${encodeURIComponent(gameId)}`,
+      undefined,
+      false,
+      opts,
+    );
+  }
+
+  /**
+   * Fetch one indexed on-chain round by contract id and on-chain game id.
+   *
+   * A 404 comes back as a failed result (`API_NOT_FOUND`, status 404): the
+   * round simply isn't indexed yet, which callers must be able to tell apart
+   * from an unavailable backend (network error / 5xx, retried and reported as
+   * a network or server error).
+   */
+  async getIndexedGame(
+    contractId: string,
+    gameId: string,
+    opts?: ApiRequestOptions,
+  ): Promise<ApiResult<IndexedGameResponse>> {
+    if (!contractId.trim() || !gameId.trim()) {
+      return {
+        success: false,
+        error: makeValidationError("Contract id and game id are required."),
+      };
+    }
+    return this._request(
+      "GET",
+      `/games/${encodeURIComponent(contractId)}/${encodeURIComponent(gameId)}`,
       undefined,
       false,
       opts,
@@ -376,7 +462,7 @@ export class ApiClient {
 
   async deposit(
     input: WalletAmountRequest,
-    opts?: ApiRequestOptions,
+    _opts?: ApiRequestOptions,
   ): Promise<ApiResult<DepositResponse>> {
     if (input.amount <= 0) {
       return {
@@ -384,12 +470,12 @@ export class ApiClient {
         error: makeValidationError("Amount must be greater than zero."),
       };
     }
-    return this._request("POST", "/wallet/deposit", input, true, opts);
+    return { success: false, error: makeWalletFlowDisabledError("Deposits") };
   }
 
   async withdraw(
     input: WalletAmountRequest,
-    opts?: ApiRequestOptions,
+    _opts?: ApiRequestOptions,
   ): Promise<ApiResult<WithdrawResponse>> {
     if (input.amount <= 0) {
       return {
@@ -397,7 +483,7 @@ export class ApiClient {
         error: makeValidationError("Amount must be greater than zero."),
       };
     }
-    return this._request("POST", "/wallet/withdraw", input, true, opts);
+    return { success: false, error: makeWalletFlowDisabledError("Withdrawals") };
   }
 
   /** Real on-chain balances from Horizon — no linked account required. */

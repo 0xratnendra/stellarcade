@@ -141,28 +141,36 @@ describe('ApiClient — happy path', () => {
     }
   });
 
-  it('deposit returns updated balance', async () => {
-    mockFetch(200, { balance: 105.0 });
+  it('deposit is not available yet and never reaches the API', async () => {
+    const spy = vi.fn();
+    global.fetch = spy;
 
     const client = new ApiClient({ sessionStore: makeSessionStore() });
     const result = await client.deposit({ amount: 5.0 });
 
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.balance).toBe(105.0);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.message).toMatch(/not available yet/i);
+      expect(result.error.status).toBe(501);
+      expect(result.error.severity).toBe('terminal');
     }
+    expect(spy).not.toHaveBeenCalled();
   });
 
-  it('withdraw returns updated balance', async () => {
-    mockFetch(200, { balance: 95.0 });
+  it('withdraw is not available yet and never reaches the API', async () => {
+    const spy = vi.fn();
+    global.fetch = spy;
 
     const client = new ApiClient({ sessionStore: makeSessionStore() });
     const result = await client.withdraw({ amount: 5.0 });
 
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.balance).toBe(95.0);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.message).toMatch(/not available yet/i);
+      expect(result.error.status).toBe(501);
+      expect(result.error.severity).toBe('terminal');
     }
+    expect(spy).not.toHaveBeenCalled();
   });
 });
 
@@ -172,7 +180,7 @@ describe('ApiClient — auth propagation', () => {
   it('sends Authorization header when token is present', async () => {
     mockFetch(200, { success: true });
     const client = new ApiClient({ sessionStore: makeSessionStore('my-token') });
-    await client.deposit({ amount: 10 });
+    await client.getProfile('GABC123');
 
     const calledHeaders = (global.fetch as any).mock.calls[0][1]?.headers as Record<string, string>;
     expect(calledHeaders['Authorization']).toBe('Bearer my-token');
@@ -183,7 +191,7 @@ describe('ApiClient — auth propagation', () => {
     global.fetch = spy;
 
     const client = new ApiClient({ sessionStore: makeSessionStore(null) });
-    const result = await client.deposit({ amount: 10 });
+    const result = await client.getProfile('GABC123');
 
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -269,7 +277,7 @@ describe('ApiClient — retry logic', () => {
     mockFetch(400, { message: 'bad request' });
 
     const client = new ApiClient({ sessionStore: makeSessionStore() });
-    const result = await client.deposit({ amount: 10 });
+    const result = await client.getProfile('GABC123');
 
     expect(result.success).toBe(false);
     expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(1);
@@ -293,7 +301,7 @@ describe('ApiClient — error mapping', () => {
     mockFetch(400, { error: { message: 'invalid input', status: 400 } });
 
     const client = new ApiClient({ sessionStore: makeSessionStore() });
-    const result = await client.deposit({ amount: 10 });
+    const result = await client.getProfile('GABC123');
 
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -322,7 +330,7 @@ describe('ApiClient — error mapping', () => {
     mockFetch(403, { message: 'forbidden' });
 
     const client = new ApiClient({ sessionStore: makeSessionStore() });
-    const result = await client.deposit({ amount: 10 });
+    const result = await client.getProfile('GABC123');
 
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -330,6 +338,27 @@ describe('ApiClient — error mapping', () => {
       expect(result.error.category).toBe('auth');
       expect(result.error.status).toBe(403);
     }
+  });
+
+  it('maps 501 → a terminal "not available yet" error, never a retry', async () => {
+    mockFetch(501, {
+      error: {
+        message: 'Deposits are not available yet: the on-chain settlement flow is not enabled yet.',
+        code: 'WALLET_FLOW_DISABLED',
+        status: 501,
+      },
+    });
+
+    const client = new ApiClient({ sessionStore: makeSessionStore() });
+    const result = await client.getProfile('GABC123');
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.status).toBe(501);
+      expect(result.error.severity).toBe('terminal');
+      expect(result.error.message).toMatch(/not available yet/i);
+    }
+    expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(1);
   });
 
   it('maps 404 → API_NOT_FOUND', async () => {
@@ -559,7 +588,7 @@ describe('ApiClient — result envelope shape', () => {
 
   it('error contains code, domain, severity, message fields', async () => {
     const client = new ApiClient({ sessionStore: makeSessionStore(null) });
-    const result = await client.deposit({ amount: 10 });
+    const result = await client.getProfile('GABC123');
 
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -616,3 +645,67 @@ describe('ApiClient — result envelope shape', () => {
   });
 });
 
+
+describe('ApiClient — indexed game lookup', () => {
+  const CONTRACT_ID = 'CAA7MSM77YCU73NSBR46CIS26LSJT6RTBT476BEZ67BL5GUIFIQXLVBQ';
+  const indexedRow = {
+    game_type: 'coinflip',
+    bet_amount: '1.0000000',
+    payout: '0.0000000',
+    result: 'pending',
+    status: 'pending',
+    contract_id: CONTRACT_ID,
+    chain_game_id: '424242',
+    side: 'heads',
+    resolve_tx_hash: null,
+  };
+
+  it('getIndexedGame fetches /games/:contractId/:id', async () => {
+    mockFetch(200, indexedRow);
+
+    const client = new ApiClient();
+    const result = await client.getIndexedGame(CONTRACT_ID, '424242');
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.chain_game_id).toBe('424242');
+      expect(result.data.status).toBe('pending');
+    }
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining(`/games/${CONTRACT_ID}/424242`),
+      expect.objectContaining({ method: 'GET' })
+    );
+  });
+
+  it('getIndexedGame reports a 404 as API_NOT_FOUND with status 404, without retrying', async () => {
+    mockFetch(404, { status: 404, message: 'No indexed game matches this contract and game id.' });
+
+    const client = new ApiClient();
+    const result = await client.getIndexedGame(CONTRACT_ID, '999999');
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.code).toBe('API_NOT_FOUND');
+      expect(result.error.status).toBe(404);
+      expect(result.error.severity).toBe('terminal');
+    }
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('getIndexedGame validates the ids without hitting the API', async () => {
+    const spy = vi.fn();
+    global.fetch = spy;
+    const client = new ApiClient();
+
+    for (const [contractId, gameId] of [
+      ['', '1'],
+      [CONTRACT_ID, '  '],
+    ]) {
+      const result = await client.getIndexedGame(contractId, gameId);
+      expect(result.success).toBe(false);
+      if (!result.success) expect(result.error.code).toBe('API_VALIDATION_ERROR');
+    }
+
+    expect(spy).not.toHaveBeenCalled();
+  });
+});

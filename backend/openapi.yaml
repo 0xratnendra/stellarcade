@@ -310,6 +310,72 @@
                 ],
             },
         },
+      '/api/games/:contractId/:id':
+        {
+          'get':
+            {
+              'operationId': 'getIndexedGame',
+              'summary': 'Fetch one indexed on-chain game by contract id and on-chain game id',
+              'tags': ['Games'],
+              'responses':
+                {
+                  '200':
+                    {
+                      'description': 'Indexed game returned successfully',
+                      'content':
+                        {
+                          'application/json':
+                            { 'schema': { '$ref': '#/components/schemas/IndexedGameResponse' } },
+                        },
+                    },
+                  '400':
+                    {
+                      'description': 'Invalid contract id or game id',
+                      'content':
+                        {
+                          'application/json':
+                            { 'schema': { '$ref': '#/components/schemas/ErrorEnvelope' } },
+                        },
+                    },
+                  '404':
+                    {
+                      'description': 'No game indexed for this contract id and game id',
+                      'content':
+                        {
+                          'application/json':
+                            { 'schema': { '$ref': '#/components/schemas/ErrorEnvelope' } },
+                        },
+                    },
+                  '500':
+                    {
+                      'description': 'Unexpected server error',
+                      'content':
+                        {
+                          'application/json':
+                            { 'schema': { '$ref': '#/components/schemas/ErrorEnvelope' } },
+                        },
+                    },
+                },
+              'description': 'Reads the row the event indexer wrote for a single round. 404 GAME_NOT_FOUND means the round is not indexed yet (or the ids are wrong), which is distinct from the backend being unavailable.',
+              'parameters':
+                [
+                  {
+                    'name': 'contractId',
+                    'in': 'path',
+                    'required': true,
+                    'schema': { 'type': 'string' },
+                    'description': 'Coin-flip contract id (Stellar contract address, C...).',
+                  },
+                  {
+                    'name': 'id',
+                    'in': 'path',
+                    'required': true,
+                    'schema': { 'type': 'string' },
+                    'description': 'On-chain game id as a decimal u64 string.',
+                  },
+                ],
+            },
+        },
       '/api/users/profile':
         {
           'get':
@@ -636,13 +702,13 @@
           'post':
             {
               'operationId': 'createDeposit',
-              'summary': 'Create a deposit request for the authenticated user',
+              'summary': 'Create a deposit request for the authenticated user (disabled — no verified on-chain flow yet)',
               'tags': ['Wallet'],
               'responses':
                 {
                   '200':
                     {
-                      'description': 'Deposit request accepted',
+                      'description': 'Deposit request accepted. Not reachable while the deposit flow is disabled.',
                       'content':
                         {
                           'application/json':
@@ -690,6 +756,15 @@
                             { 'schema': { '$ref': '#/components/schemas/ErrorEnvelope' } },
                         },
                     },
+                  '501':
+                    {
+                      'description': 'The deposit flow is disabled: no verified on-chain settlement flow is wired up yet, so the request is refused before anything is read from or written to the database. The error code is WALLET_FLOW_DISABLED.',
+                      'content':
+                        {
+                          'application/json':
+                            { 'schema': { '$ref': '#/components/schemas/ErrorEnvelope' } },
+                        },
+                    },
                 },
               'parameters': [{ '$ref': '#/components/parameters/IdempotencyKeyHeader' }],
               'requestBody':
@@ -709,13 +784,13 @@
           'post':
             {
               'operationId': 'createWithdrawal',
-              'summary': 'Create a withdrawal request for the authenticated user',
+              'summary': 'Create a withdrawal request for the authenticated user (disabled — no verified on-chain flow yet)',
               'tags': ['Wallet'],
               'responses':
                 {
                   '200':
                     {
-                      'description': 'Withdrawal request accepted',
+                      'description': 'Withdrawal request accepted. Not reachable while the withdrawal flow is disabled.',
                       'content':
                         {
                           'application/json':
@@ -757,6 +832,15 @@
                   '500':
                     {
                       'description': 'Unexpected server error',
+                      'content':
+                        {
+                          'application/json':
+                            { 'schema': { '$ref': '#/components/schemas/ErrorEnvelope' } },
+                        },
+                    },
+                  '501':
+                    {
+                      'description': 'The withdrawal flow is disabled: no verified on-chain settlement flow is wired up yet, so the request is refused before anything is read from or written to the database. The error code is WALLET_FLOW_DISABLED.',
                       'content':
                         {
                           'application/json':
@@ -1149,6 +1233,49 @@
                   'pageSize': { 'type': 'integer' },
                   'total': { 'type': 'integer' },
                   'totalPages': { 'type': 'integer' },
+                },
+            },
+          'IndexedGameResponse':
+            {
+              'type': 'object',
+              'required': ['contract_id', 'chain_game_id', 'game_type', 'status', 'result'],
+              'properties':
+                {
+                  'id': { 'type': 'integer' },
+                  'user_id': { 'type': 'integer', 'nullable': true },
+                  'game_type': { 'type': 'string' },
+                  'bet_amount':
+                    {
+                      'type': 'string',
+                      'description': 'Wager in XLM units with 7 decimals (stroops / 10^7).',
+                    },
+                  'payout':
+                    {
+                      'type': 'string',
+                      'description': 'Payout in XLM units with 7 decimals; 0.0000000 while pending.',
+                    },
+                  'result': { 'type': 'string', 'enum': ['win', 'loss', 'pending'] },
+                  'status': { 'type': 'string', 'enum': ['pending', 'resolved'] },
+                  'contract_id': { 'type': 'string' },
+                  'chain_game_id':
+                    { 'type': 'string', 'description': 'On-chain u64 game id, decimal string.' },
+                  'player_address': { 'type': 'string' },
+                  'side': { 'type': 'string', 'enum': ['heads', 'tails'] },
+                  'ledger': { 'type': 'integer', 'nullable': true },
+                  'tx_hash':
+                    {
+                      'type': 'string',
+                      'nullable': true,
+                      'description': 'Bet-placing transaction hash.',
+                    },
+                  'resolve_tx_hash':
+                    {
+                      'type': 'string',
+                      'nullable': true,
+                      'description': 'Resolving transaction hash.',
+                    },
+                  'resolved_at': { 'type': 'string', 'format': 'date-time', 'nullable': true },
+                  'created_at': { 'type': 'string', 'format': 'date-time' },
                 },
             },
           'MonetaryAmountRequest':

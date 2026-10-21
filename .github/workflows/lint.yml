@@ -23,10 +23,24 @@ jobs:
         with:
           toolchain: 1.91.0
           components: clippy
+      # The repo's rust-toolchain.toml pins channel = "stable", and a
+      # directory override beats the toolchain installed above — so this is
+      # the toolchain cargo actually runs under, and its "minimal" profile
+      # ships no rustfmt. Install it explicitly or `cargo fmt` aborts with
+      # "'cargo-fmt' is not installed". No --toolchain, so rustup resolves
+      # the same override the build will use.
+      - name: Install rustfmt
+        run: rustup component add rustfmt
       # Whole workspace, not a curated subset — a crate left off a hand
       # maintained list here is a crate that silently never gets linted.
       - name: Run Clippy (entire contracts workspace)
         run: cd contracts && cargo clippy --workspace --locked -- -D warnings
+      # Formatting drift lands as noisy diffs for whoever touches the file
+      # next, so fail the build on it. --all covers every workspace member
+      # (and the path dependencies they pull in); `cargo fmt` without it
+      # only checks the crate in the current directory.
+      - name: Check formatting (entire contracts workspace)
+        run: cd contracts && cargo fmt --all -- --check
 
   lint-web:
     runs-on: ubuntu-latest

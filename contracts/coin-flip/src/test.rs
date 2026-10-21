@@ -1065,12 +1065,12 @@ fn test_get_config_and_defaults() {
     assert_eq!(config.min_wager, 10i128);
     assert_eq!(config.max_wager, 1000i128);
     assert_eq!(config.house_edge_bps, 250i128);
-    assert_eq!(config.paused, false);
+    assert!(!config.paused);
     assert_eq!(
         config.refund_timeout_ledgers,
         DEFAULT_REFUND_TIMEOUT_LEDGERS
     );
-    assert_eq!(s.flip_client.is_paused(), false);
+    assert!(!s.flip_client.is_paused());
 }
 
 #[test]
@@ -1112,17 +1112,17 @@ fn test_pause_and_unpause() {
     let env = Env::default();
     let s = setup(&env);
 
-    assert_eq!(s.flip_client.is_paused(), false);
+    assert!(!s.flip_client.is_paused());
 
     // Admin pauses
     s.flip_client.set_paused(&s.admin, &true);
-    assert_eq!(s.flip_client.is_paused(), true);
-    assert_eq!(s.flip_client.get_config().paused, true);
+    assert!(s.flip_client.is_paused());
+    assert!(s.flip_client.get_config().paused);
 
     // Admin unpauses
     s.flip_client.set_paused(&s.admin, &false);
-    assert_eq!(s.flip_client.is_paused(), false);
-    assert_eq!(s.flip_client.get_config().paused, false);
+    assert!(!s.flip_client.is_paused());
+    assert!(!s.flip_client.get_config().paused);
 
     // Non-admin rejected
     let attacker = Address::generate(&env);

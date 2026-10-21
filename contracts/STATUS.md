@@ -16,7 +16,6 @@ should be updated or removed the next time someone touches `CLAUDE.md`.
 - Presence of `#[test]` blocks (a proxy for test coverage, not quality)
 - Explicit placeholder language (`"for now"`, `"would be populated"`,
   `"empty state"`, `"placeholder"`, `"not yet implement"`) — this caught
-  contracts like `clan-registry` that compile and have real-looking
   `#[contractimpl]` blocks but return hardcoded zero/empty structs
 
 **This is a heuristic, not a manual code review of 151 crates** — some
@@ -128,7 +127,6 @@ coverage).
 | `arena-sessions` | 290 | 0 | 0 | partial |
 | `asset-escrow-v3` | 239 | 0 | 0 | stub |
 | `attendance-pass` | 321 | 0 | 5 | implemented |
-| `auction-house` | 61 | 0 | 0 | stub |
 | `badge-claims-v2` | 54 | 0 | 0 | stub |
 | `badge-ledger` | 17 | 0 | 0 | stub |
 | `badge-minter` | 711 | 0 | 11 | stub |
@@ -138,7 +136,6 @@ coverage).
 | `bounty-escrow` | 232 | 0 | 0 | partial |
 | `campaign-claims` | 365 | 0 | 0 | partial |
 | `challenge-ladder` | 83 | 0 | 0 | partial |
-| `clan-registry` | 60 | 0 | 0 | stub |
 | `clan-seasons` | 179 | 0 | 0 | partial |
 | `coin-flip` | 540 | 0 | 0 | partial |
 | `color-prediction` | 758 | 2 | 16 | partial |
@@ -213,7 +210,6 @@ coverage).
 | `prize-router-v2` | 264 | 0 | 0 | partial |
 | `prize-streamer` | 263 | 0 | 0 | partial |
 | `profile-perks` | 146 | 0 | 0 | partial |
-| `quest-board` | 58 | 0 | 0 | stub |
 | `quest-ledger-v2` | 401 | 0 | 4 | implemented |
 | `quest-redeemer` | 169 | 0 | 0 | stub |
 | `queue-rewards` | 169 | 0 | 0 | stub |
@@ -234,7 +230,6 @@ coverage).
 | `reward-vesting` | 647 | 0 | 19 | implemented |
 | `round-finalizer` | 266 | 0 | 0 | stub |
 | `round-vouchers` | 207 | 0 | 0 | partial |
-| `season-pass` | 49 | 0 | 0 | stub |
 | `season-rewards-vault` | 721 | 0 | 8 | stub |
 | `session-nonce-manager` | 529 | 0 | 14 | implemented |
 | `settlement-queue` | 640 | 0 | 0 | stub |

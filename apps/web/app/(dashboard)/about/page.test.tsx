@@ -25,12 +25,27 @@ describe("AboutPage", () => {
   it("renders the fairness explanation section and verify CTA", () => {
     render(<AboutPage />);
     expect(screen.getByRole("heading", { level: 2, name: /How Provable Fairness Works/i })).toBeInTheDocument();
-    expect(screen.getByText(/Step 1: Commitment/i)).toBeInTheDocument();
-    expect(screen.getByText(/Step 2: Entropy Mix/i)).toBeInTheDocument();
-    expect(screen.getByText(/Step 3: Verification/i)).toBeInTheDocument();
+    expect(screen.getByText(/Step 1: Commit/)).toBeInTheDocument();
+    expect(screen.getByText(/Step 2: Lock/)).toBeInTheDocument();
+    expect(screen.getByText(/Step 3: Reveal/)).toBeInTheDocument();
+    expect(screen.getByText(/Step 4: Verify/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Launch Interactive Fairness Verifier/i })).toHaveAttribute(
       "href",
       "/verify"
     );
+    expect(screen.getByRole("link", { name: /Read the four steps in plain language/i })).toHaveAttribute(
+      "href",
+      "/verify#how-it-works"
+    );
+  });
+
+  it("states the contract's formula and the scheme's honest limits", () => {
+    render(<AboutPage />);
+    expect(screen.getByText(/sha256\(seed ‖ round id\)/)).toBeInTheDocument();
+    expect(screen.getByText(/first 8 bytes as big-endian, mod 2/)).toBeInTheDocument();
+    expect(screen.getByTestId("fairness-limits")).toHaveTextContent(/cancel_stale_bet/);
+    expect(screen.getByTestId("fairness-limits")).toHaveTextContent(/refund or a payout, never both/);
+    // The contracts take no client seed or ledger hash — don't claim one.
+    expect(screen.queryByText(/client seed/i)).not.toBeInTheDocument();
   });
 });

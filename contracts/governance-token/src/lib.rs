@@ -1,7 +1,6 @@
 #![no_std]
 use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, contracttype,
-    Address, Env, String, Vec,
+    contract, contracterror, contractevent, contractimpl, contracttype, Address, Env, String, Vec,
 };
 
 #[contracterror]
@@ -148,18 +147,25 @@ impl GovernanceToken {
             return Err(Error::InvalidAmount);
         }
 
-        let admin: Address =
-            env.storage().instance().get(&DataKey::Admin).ok_or(Error::NotAuthorized)?;
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotAuthorized)?;
         admin.require_auth();
 
         let balance = Self::balance(env.clone(), to.clone());
         let new_balance = balance.checked_add(amount).ok_or(Error::Overflow)?;
-        env.storage().persistent().set(&DataKey::Balance(to.clone()), &new_balance);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Balance(to.clone()), &new_balance);
         write_checkpoint(&env, &to, new_balance);
 
         let total_supply = Self::total_supply(env.clone());
         let new_total_supply = total_supply.checked_add(amount).ok_or(Error::Overflow)?;
-        env.storage().instance().set(&DataKey::TotalSupply, &new_total_supply);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalSupply, &new_total_supply);
 
         TokenMinted { to, amount }.publish(&env);
         Ok(())
@@ -171,8 +177,11 @@ impl GovernanceToken {
             return Err(Error::InvalidAmount);
         }
 
-        let admin: Address =
-            env.storage().instance().get(&DataKey::Admin).ok_or(Error::NotAuthorized)?;
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotAuthorized)?;
         admin.require_auth();
 
         let balance = Self::balance(env.clone(), from.clone());
@@ -181,12 +190,16 @@ impl GovernanceToken {
         }
 
         let new_balance = balance.checked_sub(amount).ok_or(Error::Overflow)?;
-        env.storage().persistent().set(&DataKey::Balance(from.clone()), &new_balance);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Balance(from.clone()), &new_balance);
         write_checkpoint(&env, &from, new_balance);
 
         let total_supply = Self::total_supply(env.clone());
         let new_total_supply = total_supply.checked_sub(amount).ok_or(Error::Overflow)?;
-        env.storage().instance().set(&DataKey::TotalSupply, &new_total_supply);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalSupply, &new_total_supply);
 
         TokenBurned { from, amount }.publish(&env);
         Ok(())
@@ -205,12 +218,16 @@ impl GovernanceToken {
         }
 
         let new_balance_from = balance_from.checked_sub(amount).ok_or(Error::Overflow)?;
-        env.storage().persistent().set(&DataKey::Balance(from.clone()), &new_balance_from);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Balance(from.clone()), &new_balance_from);
         write_checkpoint(&env, &from, new_balance_from);
 
         let balance_to = Self::balance(env.clone(), to.clone());
         let new_balance_to = balance_to.checked_add(amount).ok_or(Error::Overflow)?;
-        env.storage().persistent().set(&DataKey::Balance(to.clone()), &new_balance_to);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Balance(to.clone()), &new_balance_to);
         write_checkpoint(&env, &to, new_balance_to);
 
         TokenTransferred { from, to, amount }.publish(&env);
@@ -218,11 +235,17 @@ impl GovernanceToken {
     }
 
     pub fn balance(env: Env, id: Address) -> i128 {
-        env.storage().persistent().get(&DataKey::Balance(id)).unwrap_or(0i128)
+        env.storage()
+            .persistent()
+            .get(&DataKey::Balance(id))
+            .unwrap_or(0i128)
     }
 
     pub fn total_supply(env: Env) -> i128 {
-        env.storage().instance().get(&DataKey::TotalSupply).unwrap_or(0i128)
+        env.storage()
+            .instance()
+            .get(&DataKey::TotalSupply)
+            .unwrap_or(0i128)
     }
 
     pub fn name(env: Env) -> String {
@@ -315,7 +338,12 @@ mod test {
     use soroban_sdk::testutils::{Address as _, Ledger, MockAuth, MockAuthInvoke};
     use soroban_sdk::IntoVal;
 
-    fn setup() -> (Env, Address, soroban_sdk::Address, GovernanceTokenClient<'static>) {
+    fn setup() -> (
+        Env,
+        Address,
+        soroban_sdk::Address,
+        GovernanceTokenClient<'static>,
+    ) {
         let env = Env::default();
         env.mock_all_auths();
         let admin = Address::generate(&env);

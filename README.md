@@ -112,6 +112,7 @@ stellarcade/
 | [API Reference](docs/API_DOCUMENTATION.md) | REST API documentation           |
 | [Game Rules](docs/GAME_RULES.md)           | Game mechanics and rules         |
 | [Deployment](docs/DEPLOYMENT.md)           | Production deployment guide      |
+| [Incident Runbook](docs/runbook.md)        | Oracle / indexer / RPC incidents |
 | [Contributing](CONTRIBUTING.md)            | How to contribute                |
 
 ### Subsystem Documentation

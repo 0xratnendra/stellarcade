@@ -181,6 +181,15 @@ export const CoinFlipPlayPanel: React.FC<CoinFlipPlayPanelProps> = ({
                 </a>
               </li>
             ) : null}
+            <li>
+              <a
+                href="/verify#how-it-works"
+                className="text-sky-300 underline"
+                data-testid={`coinflip-fairness-link${testIdSuffix}`}
+              >
+                How is this fair?
+              </a>
+            </li>
           </ul>
         </div>
         <Button
