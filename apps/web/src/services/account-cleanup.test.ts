@@ -15,7 +15,7 @@ function makeAccount(overrides: Partial<Horizon.AccountResponse> = {}): Horizon.
     last_modified_ledger: 1,
     thresholds: { low_threshold: 0, med_threshold: 0, high_threshold: 0 },
     flags: { auth_required: false, auth_revocable: false, auth_immutable: false, auth_clawback_enabled: false },
-    balances: [{ asset_type: "native", balance: "100.0000000" } as Horizon.BalanceLine],
+    balances: [{ asset_type: "native", balance: "100.0000000" } as Horizon.HorizonApi.BalanceLine],
     signers: [],
     data: {},
     _links: {} as any,
@@ -47,11 +47,11 @@ describe("buildCleanupTransaction (#1507)", () => {
     const ops = tx.operations;
     expect(ops).toHaveLength(1);
     expect(ops[0].type).toBe("changeTrust");
-    expect((ops[0] as any).limit).toBe("0");
+    expect((ops[0] as any).limit).toBe("0.0000000");
   });
 
   it("builds a setOptions operation for signer subentries", async () => {
-    const signerKey = "GBBD47IF6LWK7P7MDEVSCADEPLAYERHYGIENE777SAMPLEPUBLICKEY11X";
+    const signerKey = "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN";
     const subentries: CleanableSubentry[] = [
       {
         id: signerKey,
@@ -107,7 +107,7 @@ describe("buildCleanupTransaction (#1507)", () => {
         id: "tl-multi",
         type: "trustline",
         assetCode: "ARS",
-        assetIssuer: "GCQTGZQQ5G4PTM2GL7CDIFKUBIPEC52BROAQIAPW53XBRJVN6ZJVTG6I",
+        assetIssuer: "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN",
         description: "Stale ARS trustline",
         lockedReserveXlm: 0.5,
         canReclaim: true,
