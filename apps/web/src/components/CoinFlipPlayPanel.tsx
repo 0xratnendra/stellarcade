@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useId, useState } from "react";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
 import { useWalletStatus } from "../hooks/useWalletStatus";
@@ -20,7 +20,7 @@ const WAGER_PRESETS = [5, 10, 25, 50];
 /** Shared styling for the pick/wager choice buttons. */
 function choiceClass(selected: boolean) {
   return cn(
-    "rounded-lg border px-3 py-2.5 text-sm font-semibold transition-colors",
+    "rounded-lg border px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70",
     selected
       ? "border-primary bg-primary/15 text-primary"
       : "border-border bg-background/40 text-foreground hover:border-primary/40",
@@ -52,6 +52,9 @@ export const CoinFlipPlayPanel: React.FC<CoinFlipPlayPanelProps> = ({
   const [placedBet, setPlacedBet] = useState<{ gameId: bigint; txHash: string } | null>(null);
   const [betError, setBetError] = useState<string | null>(null);
   const liveGame = useCoinFlipGame(placedBet?.gameId ?? null);
+
+  const errorId = useId();
+  const statusId = useId();
 
   const handleExecutePlay = useCallback(async () => {
     if (!wallet.capabilities.isConnected) {
@@ -109,6 +112,7 @@ export const CoinFlipPlayPanel: React.FC<CoinFlipPlayPanelProps> = ({
           className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-slate-200"
           data-testid={`coinflip-live-result${testIdSuffix}`}
           aria-live="polite"
+          aria-atomic="true"
         >
           {liveGame.status === "resolved" && liveGame.game ? (
             liveGame.game.refunded ? (
@@ -207,27 +211,44 @@ export const CoinFlipPlayPanel: React.FC<CoinFlipPlayPanelProps> = ({
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Polite live region for submission status (screen readers). */}
+      <div
+        id={statusId}
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+        data-testid={`coinflip-status${testIdSuffix}`}
+      >
+        {isExecutingPlay ? "Placing bet on Soroban, please wait…" : ""}
+      </div>
+
+      {/* Side selection — real radio group for arrow-key navigation. */}
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-1 text-[13px] font-semibold text-foreground">Choose your pick</legend>
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => setPlaySide(CoinFlipSide.Heads)}
-            aria-pressed={playSide === CoinFlipSide.Heads}
-            className={choiceClass(playSide === CoinFlipSide.Heads)}
-            data-testid={`btn-pick-heads${testIdSuffix}`}
-          >
-            🪙 Heads
-          </button>
-          <button
-            type="button"
-            onClick={() => setPlaySide(CoinFlipSide.Tails)}
-            aria-pressed={playSide === CoinFlipSide.Tails}
-            className={choiceClass(playSide === CoinFlipSide.Tails)}
-            data-testid={`btn-pick-tails${testIdSuffix}`}
-          >
-            🪙 Tails
-          </button>
+        <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Coin side">
+          {(
+            [
+              { side: CoinFlipSide.Heads, label: "🪙 Heads", testId: `btn-pick-heads${testIdSuffix}` },
+              { side: CoinFlipSide.Tails, label: "🪙 Tails", testId: `btn-pick-tails${testIdSuffix}` },
+            ] as const
+          ).map(({ side, label, testId }) => (
+            <label
+              key={side}
+              className={cn(choiceClass(playSide === side), "flex cursor-pointer items-center justify-center")}
+              data-testid={testId}
+            >
+              <input
+                type="radio"
+                name={`coinflip-side${testIdSuffix}`}
+                value={side}
+                checked={playSide === side}
+                onChange={() => setPlaySide(side)}
+                className="sr-only"
+                aria-label={label.replace("🪙 ", "")}
+              />
+              {label}
+            </label>
+          ))}
         </div>
       </fieldset>
 
@@ -253,6 +274,7 @@ export const CoinFlipPlayPanel: React.FC<CoinFlipPlayPanelProps> = ({
       <div className="mt-2">
         {betError ? (
           <p
+            id={errorId}
             role="alert"
             className="mb-2 text-sm text-rose-300"
             data-testid={`bet-error${testIdSuffix}`}
@@ -267,6 +289,9 @@ export const CoinFlipPlayPanel: React.FC<CoinFlipPlayPanelProps> = ({
           className="w-full"
           onClick={handleExecutePlay}
           disabled={isExecutingPlay}
+          aria-busy={isExecutingPlay}
+          aria-describedby={betError ? errorId : undefined}
+          aria-controls={statusId}
           data-testid={`btn-confirm-bet${testIdSuffix}`}
         >
           {isExecutingPlay

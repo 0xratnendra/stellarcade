@@ -1,0 +1,20 @@
+# CODEOWNERS — automatic review routing for high-risk paths.
+# Syntax: <pattern> <owner> [<owner>...]
+# Patterns are matched top-to-bottom; the last matching rule wins.
+
+# --- Smart contracts (hold real funds) ---
+contracts/coin-flip/         @CMI-James
+contracts/random-generator/  @CMI-James
+contracts/dice-roll/         @CMI-James
+contracts/prize-pool/        @CMI-James
+
+# --- Oracle and Soroban service layer ---
+backend/src/services/oracle.worker.js    @CMI-James
+backend/src/services/soroban.service.js  @CMI-James
+
+# --- Deployment manifests and scripts ---
+deployments/              @CMI-James
+scripts/deploy-contracts.sh @CMI-James
+
+# --- CI/CD workflows ---
+.github/workflows/        @CMI-James

@@ -6,12 +6,12 @@ test.describe("Cleanup (/cleanup)", () => {
 
     await expect(page.locator("h1").first()).toContainText("Cleanup & Reserve Recovery");
 
-    // Click Scan Account button
+   
     const scanBtn = page.getByRole("button", { name: /Scan Account/i });
     await expect(scanBtn).toBeVisible();
     await scanBtn.click();
 
-    // Verify scan results appear
+    
     await expect(page.getByText(/Base.*Account Reserve/i).first()).toBeVisible();
   });
 });
