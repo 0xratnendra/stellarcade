@@ -2,7 +2,7 @@
 
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contracttype, Address, BytesN, Env,
-    Symbol,
+    Symbol, Vec,
 };
 
 // ---------------------------------------------------------------------------
@@ -28,6 +28,7 @@ pub enum Error {
     TaskAlreadyExecuted = 6,
     TaskNotFound = 7,
     EpochNotReached = 8,
+    TaskAlreadyExists = 9,
 }
 
 // ---------------------------------------------------------------------------
@@ -48,6 +49,7 @@ pub enum DataKey {
     Admin,
     EpochDuration,
     Task(Symbol), // Keyed by task_id
+    Schedulers,   // Vec<Address> of admin-approved scheduler addresses
 }
 
 // ---------------------------------------------------------------------------
@@ -90,6 +92,24 @@ pub struct TaskScheduled {
 
 #[contractevent]
 pub struct TaskExecuted {
+    pub task_id: Symbol,
+}
+
+/// Emitted when the admin approves a new scheduler address.
+#[contractevent]
+pub struct SchedulerAdded {
+    #[topic]
+    pub admin: Address,
+    #[topic]
+    pub scheduler: Address,
+}
+
+/// Emitted when the admin cancels a scheduled task.
+#[contractevent]
+pub struct TaskCancelled {
+    #[topic]
+    pub admin: Address,
+    #[topic]
     pub task_id: Symbol,
 }
 
@@ -142,14 +162,25 @@ impl EpochScheduler {
     }
 
     /// Schedule a task for a future or current epoch.
+    ///
+    /// Only an address the admin has approved via `add_scheduler` may
+    /// schedule tasks. The `scheduler` address must authorise the call.
+    ///
+    /// A `task_id` can only be used once: scheduling a task whose id already
+    /// exists fails with `TaskAlreadyExists` rather than overwriting the
+    /// stored `payload_hash`. An admin can retire a task with `cancel_task`.
     pub fn schedule_task(
         env: Env,
+        scheduler: Address,
         task_id: Symbol,
         epoch: u64,
         payload_hash: BytesN<32>,
     ) -> Result<(), Error> {
-        // Any user can schedule a task in this base version, or it could be restricted.
-        // Assuming open scheduling for now.
+        scheduler.require_auth();
+
+        if !Self::is_scheduler(&env, &scheduler) {
+            return Err(Error::NotAuthorized);
+        }
 
         let current = Self::current_epoch(env.clone());
         if epoch < current {
@@ -158,12 +189,11 @@ impl EpochScheduler {
 
         let key = DataKey::Task(task_id.clone());
 
-        // Prevent overwriting if we wanted to enforce unique task_ids across all time
-        // or just allow updating before execution. Let's allow update if not executed.
-        if let Some(existing) = env.storage().persistent().get::<_, TaskData>(&key) {
-            if existing.executed {
-                return Err(Error::TaskAlreadyExecuted);
-            }
+        // A task id is single-use. Overwriting an existing task would let a
+        // scheduler silently replace the payload of a task another scheduler
+        // already scheduled, so reject instead.
+        if env.storage().persistent().has(&key) {
+            return Err(Error::TaskAlreadyExists);
         }
 
         let data = TaskData {
@@ -180,6 +210,58 @@ impl EpochScheduler {
         );
 
         TaskScheduled { task_id, epoch }.publish(&env);
+
+        Ok(())
+    }
+
+    /// Approve an address as a scheduler. Admin only.
+    ///
+    /// The approved address may then call `schedule_task`. Approving an
+    /// address that is already approved is a no-op.
+    pub fn add_scheduler(env: Env, admin: Address, scheduler: Address) -> Result<(), Error> {
+        admin.require_auth();
+        Self::require_admin_caller(&env, &admin)?;
+
+        let mut schedulers: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::Schedulers)
+            .unwrap_or_else(|| Vec::new(&env));
+
+        if !schedulers.contains(&scheduler) {
+            schedulers.push_back(scheduler.clone());
+            env.storage()
+                .instance()
+                .set(&DataKey::Schedulers, &schedulers);
+        }
+
+        SchedulerAdded { admin, scheduler }.publish(&env);
+
+        Ok(())
+    }
+
+    /// Cancel a scheduled task. Admin only.
+    ///
+    /// Removes the task so its id and payload are no longer scheduled. A
+    /// task that was already executed cannot be cancelled.
+    pub fn cancel_task(env: Env, admin: Address, task_id: Symbol) -> Result<(), Error> {
+        admin.require_auth();
+        Self::require_admin_caller(&env, &admin)?;
+
+        let key = DataKey::Task(task_id.clone());
+        let task: TaskData = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::TaskNotFound)?;
+
+        if task.executed {
+            return Err(Error::TaskAlreadyExecuted);
+        }
+
+        env.storage().persistent().remove(&key);
+
+        TaskCancelled { admin, task_id }.publish(&env);
 
         Ok(())
     }
@@ -254,6 +336,28 @@ impl EpochScheduler {
             .get(&DataKey::Admin)
             .ok_or(Error::NotInitialized)
     }
+
+    /// Require that `caller` is the stored admin.
+    fn require_admin_caller(env: &Env, caller: &Address) -> Result<(), Error> {
+        let admin = Self::require_admin(env)?;
+        if caller != &admin {
+            return Err(Error::NotAuthorized);
+        }
+        Ok(())
+    }
+
+    /// Addresses the admin has approved as schedulers.
+    fn schedulers(env: &Env) -> Vec<Address> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Schedulers)
+            .unwrap_or_else(|| Vec::new(env))
+    }
+
+    /// Whether `address` is an admin-approved scheduler.
+    fn is_scheduler(env: &Env, address: &Address) -> bool {
+        Self::schedulers(env).contains(address)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -272,7 +376,8 @@ mod test {
     struct Setup<'a> {
         env: Env,
         client: EpochSchedulerClient<'a>,
-        _admin: Address,
+        admin: Address,
+        scheduler: Address,
     }
 
     fn setup() -> Setup<'static> {
@@ -285,12 +390,16 @@ mod test {
         let admin = Address::generate(&env);
         client.init(&admin, &100); // 100 ledgers per epoch
 
+        let scheduler = Address::generate(&env);
+        client.add_scheduler(&admin, &scheduler);
+
         let client: EpochSchedulerClient<'static> = unsafe { core::mem::transmute(client) };
 
         Setup {
             env,
             client,
-            _admin: admin,
+            admin,
+            scheduler,
         }
     }
 
@@ -353,7 +462,7 @@ mod test {
         });
 
         // Schedule for epoch 2
-        s.client.schedule_task(&task_id, &2, &hash);
+        s.client.schedule_task(&s.scheduler, &task_id, &2, &hash);
 
         let state = s.client.task_state(&task_id).unwrap();
         assert_eq!(state.epoch, 2);
@@ -408,8 +517,145 @@ mod test {
         });
 
         // Attempt to schedule for epoch 4 - should fail
-        let result = s.client.try_schedule_task(&task_id, &4, &hash);
+        let result = s
+            .client
+            .try_schedule_task(&s.scheduler, &task_id, &4, &hash);
         assert_eq!(result, Err(Ok(Error::InvalidScheduleEpoch)));
+    }
+
+    // ── scheduler authorisation ───────────────────────────────────────────────
+
+    #[test]
+    fn test_unauthorised_scheduler_rejected() {
+        let s = setup();
+        let task_id = symbol_short!("task1");
+        let hash = BytesN::from_array(&s.env, &[0u8; 32]);
+
+        // A stranger that the admin never approved cannot schedule.
+        let stranger = Address::generate(&s.env);
+        let result = s.client.try_schedule_task(&stranger, &task_id, &2, &hash);
+        assert_eq!(result, Err(Ok(Error::NotAuthorized)));
+
+        // Nothing was written for the rejected call.
+        assert!(s.client.task_state(&task_id).is_none());
+    }
+
+    #[test]
+    fn test_unauthorised_scheduler_rejected_without_auth() {
+        let s = setup();
+        let task_id = symbol_short!("task1");
+        let hash = BytesN::from_array(&s.env, &[0u8; 32]);
+
+        // Drop the blanket auth mock: the stranger's signature is missing.
+        s.env.set_auths(&[]);
+        let stranger = Address::generate(&s.env);
+        let result = s.client.try_schedule_task(&stranger, &task_id, &2, &hash);
+        assert!(result.is_err());
+
+        assert!(s.client.task_state(&task_id).is_none());
+    }
+
+    #[test]
+    fn test_authorised_scheduler_succeeds() {
+        let s = setup();
+        let task_id = symbol_short!("task1");
+        let hash = BytesN::from_array(&s.env, &[0u8; 32]);
+
+        s.client.schedule_task(&s.scheduler, &task_id, &2, &hash);
+
+        let state = s.client.task_state(&task_id).unwrap();
+        assert_eq!(state.epoch, 2);
+        assert_eq!(state.payload_hash, hash);
+        assert!(!state.executed);
+    }
+
+    #[test]
+    fn test_overwriting_existing_task_rejected() {
+        let s = setup();
+        let task_id = symbol_short!("task1");
+        let hash = BytesN::from_array(&s.env, &[0u8; 32]);
+        let other_hash = BytesN::from_array(&s.env, &[1u8; 32]);
+
+        s.client.schedule_task(&s.scheduler, &task_id, &2, &hash);
+
+        // A second schedule for the same task id must not overwrite the
+        // stored payload.
+        let result = s
+            .client
+            .try_schedule_task(&s.scheduler, &task_id, &3, &other_hash);
+        assert_eq!(result, Err(Ok(Error::TaskAlreadyExists)));
+
+        let state = s.client.task_state(&task_id).unwrap();
+        assert_eq!(state.epoch, 2);
+        assert_eq!(state.payload_hash, hash);
+    }
+
+    #[test]
+    fn test_admin_can_cancel_task() {
+        let s = setup();
+        let task_id = symbol_short!("task1");
+        let hash = BytesN::from_array(&s.env, &[0u8; 32]);
+
+        s.client.schedule_task(&s.scheduler, &task_id, &2, &hash);
+        assert!(s.client.task_state(&task_id).is_some());
+
+        s.client.cancel_task(&s.admin, &task_id);
+
+        // The task is gone, so its id can be scheduled again.
+        assert!(s.client.task_state(&task_id).is_none());
+
+        s.client.schedule_task(&s.scheduler, &task_id, &2, &hash);
+        assert!(s.client.task_state(&task_id).is_some());
+    }
+
+    #[test]
+    fn test_non_admin_cannot_cancel_task() {
+        let s = setup();
+        let task_id = symbol_short!("task1");
+        let hash = BytesN::from_array(&s.env, &[0u8; 32]);
+
+        s.client.schedule_task(&s.scheduler, &task_id, &2, &hash);
+
+        let stranger = Address::generate(&s.env);
+        let result = s.client.try_cancel_task(&stranger, &task_id);
+        assert_eq!(result, Err(Ok(Error::NotAuthorized)));
+
+        // The task survives the rejected cancel.
+        assert!(s.client.task_state(&task_id).is_some());
+    }
+
+    #[test]
+    fn test_non_admin_cannot_add_scheduler() {
+        let s = setup();
+
+        let stranger = Address::generate(&s.env);
+        let result = s.client.try_add_scheduler(&stranger, &stranger);
+        assert_eq!(result, Err(Ok(Error::NotAuthorized)));
+    }
+
+    #[test]
+    fn test_cancel_missing_task_fails() {
+        let s = setup();
+        let task_id = symbol_short!("task1");
+
+        let result = s.client.try_cancel_task(&s.admin, &task_id);
+        assert_eq!(result, Err(Ok(Error::TaskNotFound)));
+    }
+
+    #[test]
+    fn test_cancel_executed_task_fails() {
+        let s = setup();
+        let task_id = symbol_short!("task1");
+        let hash = BytesN::from_array(&s.env, &[0u8; 32]);
+
+        s.client.schedule_task(&s.scheduler, &task_id, &0, &hash);
+        s.client.mark_executed(&task_id);
+
+        let result = s.client.try_cancel_task(&s.admin, &task_id);
+        assert_eq!(result, Err(Ok(Error::TaskAlreadyExecuted)));
+
+        // The executed task is still recorded.
+        assert!(s.client.task_state(&task_id).unwrap().executed);
     }
 
     // ── epoch_snapshot ────────────────────────────────────────────────────────
