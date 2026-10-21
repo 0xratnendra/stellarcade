@@ -22,9 +22,10 @@
 //!   `sha256(stored_server_seed || request_id_be)[0..8] % max == stored_result`
 //!
 //! ## Storage Strategy
-//! - `instance()`: Admin, Oracle. Fixed contract-level config.
+//! - `instance()`: Admin, Oracle. Fixed contract-level config. TTL is
+//!   extended at the start of every state-changing entry point.
 //! - `persistent()`: AuthorizedCaller entries, PendingRequest entries,
-//!   FulfilledRequest entries — each a separate ledger entry with TTL
+//!   FulfilledRequest entries (both keyed by `(caller, request_id)`) — each a separate ledger entry with TTL
 //!   bumped on every write so active requests never expire mid-game.
 #![no_std]
 #![allow(unexpected_cfgs)]
@@ -41,6 +42,15 @@ use soroban_sdk::{
 /// Persistent storage TTL in ledgers (~30 days at 5 s/ledger).
 /// Bumped on every persistent write so no request expires mid-game.
 pub const PERSISTENT_BUMP_LEDGERS: u32 = 518_400;
+
+/// Instance storage TTL in ledgers (~30 days at 5 s/ledger). Instance storage
+/// holds the admin/oracle config, so if it were archived every call would fail
+/// until someone restored it.
+pub const INSTANCE_BUMP_LEDGERS: u32 = 518_400;
+
+/// Instance TTL is only extended once it drops below this many ledgers (~15
+/// days), so busy contracts do not pay for a bump on every call.
+pub const INSTANCE_LIFETIME_THRESHOLD: u32 = 259_200;
 
 // ---------------------------------------------------------------------------
 // Error Types
@@ -85,10 +95,12 @@ pub enum DataKey {
     // --- persistent() ---
     /// Presence flag for whitelisted game contract addresses.
     AuthorizedCaller(Address),
-    /// A pending randomness request, awaiting oracle fulfillment.
-    PendingRequest(u64),
+    /// A pending randomness request, awaiting oracle fulfillment. Keyed by
+    /// `(caller, request_id)` so each authorised game has its own ID space.
+    PendingRequest(Address, u64),
     /// A fulfilled request with its result and seed stored for verification.
-    FulfilledRequest(u64),
+    /// Keyed by `(caller, request_id)`.
+    FulfilledRequest(Address, u64),
     /// Per-requester request counters for sequencing visibility.
     RequesterPendingCount(Address),
     /// Per-requester fulfilled counters for sequencing visibility.
@@ -221,6 +233,8 @@ pub struct SeedsCommitted {
 pub struct RandomFulfilled {
     #[topic]
     pub request_id: u64,
+    #[topic]
+    pub caller: Address,
     pub result: u64,
     pub server_seed: BytesN<32>,
 }
@@ -229,6 +243,8 @@ pub struct RandomFulfilled {
 pub struct RandomFulfillmentRejected {
     #[topic]
     pub request_id: u64,
+    #[topic]
+    pub caller: Address,
     pub reason: u32,
 }
 
@@ -251,6 +267,8 @@ impl RandomGenerator {
     /// expected to be a backend service that pre-commits server seeds off-chain
     /// before each game round begins.
     pub fn init(env: Env, admin: Address, oracle: Address) -> Result<(), Error> {
+        extend_instance_ttl(&env);
+
         if env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::AlreadyInitialized);
         }
@@ -269,6 +287,7 @@ impl RandomGenerator {
 
     /// Add a game contract to the caller whitelist. Admin only.
     pub fn authorize(env: Env, admin: Address, caller: Address) -> Result<(), Error> {
+        extend_instance_ttl(&env);
         require_initialized(&env)?;
         require_admin(&env, &admin)?;
 
@@ -285,6 +304,7 @@ impl RandomGenerator {
 
     /// Remove a game contract from the caller whitelist. Admin only.
     pub fn revoke(env: Env, admin: Address, caller: Address) -> Result<(), Error> {
+        extend_instance_ttl(&env);
         require_initialized(&env)?;
         require_admin(&env, &admin)?;
 
@@ -306,6 +326,7 @@ impl RandomGenerator {
         oracle: Address,
         commitments: Vec<BytesN<32>>,
     ) -> Result<u32, Error> {
+        extend_instance_ttl(&env);
         require_initialized(&env)?;
         require_oracle(&env, &oracle)?;
 
@@ -354,8 +375,9 @@ impl RandomGenerator {
     /// Submit a randomness request. Only whitelisted callers may call this.
     ///
     /// `max` must be >= 2. The fulfilled result will be in `[0, max - 1]`.
-    /// `request_id` must be globally unique — rejected if a pending or
-    /// fulfilled entry for the same ID already exists.
+    /// `request_id` must be unique **per caller** — rejected if this caller
+    /// already has a pending or fulfilled entry for the same ID. Different
+    /// authorised callers may reuse the same ID independently.
     ///
     /// Pops the next commitment from the FIFO queue. If the queue is empty,
     /// fails with `NoCommitmentAvailable`.
@@ -365,6 +387,7 @@ impl RandomGenerator {
         request_id: u64,
         max: u64,
     ) -> Result<(), Error> {
+        extend_instance_ttl(&env);
         require_initialized(&env)?;
 
         if max < 2 {
@@ -381,16 +404,17 @@ impl RandomGenerator {
             return Err(Error::UnauthorizedCaller);
         }
 
-        // Block reuse of any request_id, pending or fulfilled, to prevent
-        // a game contract from submitting a duplicate after its first result.
+        // Block reuse of any request_id by the same caller, pending or
+        // fulfilled, to prevent a game contract from submitting a duplicate
+        // after its first result. Other callers' IDs are unaffected.
         if env
             .storage()
             .persistent()
-            .has(&DataKey::PendingRequest(request_id))
+            .has(&DataKey::PendingRequest(caller.clone(), request_id))
             || env
                 .storage()
                 .persistent()
-                .has(&DataKey::FulfilledRequest(request_id))
+                .has(&DataKey::FulfilledRequest(caller.clone(), request_id))
         {
             return Err(Error::DuplicateRequestId);
         }
@@ -421,7 +445,7 @@ impl RandomGenerator {
             max,
             commitment: commitment.clone(),
         };
-        let key = DataKey::PendingRequest(request_id);
+        let key = DataKey::PendingRequest(caller.clone(), request_id);
         env.storage().persistent().set(&key, &entry);
         env.storage().persistent().extend_ttl(
             &key,
@@ -468,30 +492,37 @@ impl RandomGenerator {
     /// Enforces that `sha256(server_seed) == pending.commitment`, proving the seed
     /// was committed on-chain before the request was created.
     /// Both `server_seed`, `commitment` and `result` are persisted for on-chain verification.
+    ///
+    /// `caller` is the game contract that submitted the request; requests are
+    /// namespaced by `(caller, request_id)`. Fulfilling with a caller that did
+    /// not submit `request_id` fails with `RequestNotFound`.
     pub fn fulfill_random(
         env: Env,
         oracle: Address,
+        caller: Address,
         request_id: u64,
         server_seed: BytesN<32>,
     ) -> Result<(), Error> {
+        extend_instance_ttl(&env);
         require_initialized(&env)?;
         require_oracle(&env, &oracle)?;
 
-        // Each request_id can be fulfilled exactly once.
+        // Each (caller, request_id) can be fulfilled exactly once.
         if env
             .storage()
             .persistent()
-            .has(&DataKey::FulfilledRequest(request_id))
+            .has(&DataKey::FulfilledRequest(caller.clone(), request_id))
         {
             RandomFulfillmentRejected {
                 request_id,
+                caller: caller.clone(),
                 reason: Error::AlreadyFulfilled as u32,
             }
             .publish(&env);
             return Err(Error::AlreadyFulfilled);
         }
 
-        let pending_key = DataKey::PendingRequest(request_id);
+        let pending_key = DataKey::PendingRequest(caller.clone(), request_id);
         let pending: PendingEntry =
             env.storage()
                 .persistent()
@@ -499,6 +530,7 @@ impl RandomGenerator {
                 .ok_or_else(|| {
                     RandomFulfillmentRejected {
                         request_id,
+                        caller: caller.clone(),
                         reason: Error::RequestNotFound as u32,
                     }
                     .publish(&env);
@@ -514,6 +546,7 @@ impl RandomGenerator {
         if digest != pending.commitment {
             RandomFulfillmentRejected {
                 request_id,
+                caller: caller.clone(),
                 reason: Error::SeedCommitmentMismatch as u32,
             }
             .publish(&env);
@@ -545,7 +578,7 @@ impl RandomGenerator {
             result,
             commitment: pending.commitment.clone(),
         };
-        let fulfilled_key = DataKey::FulfilledRequest(request_id);
+        let fulfilled_key = DataKey::FulfilledRequest(caller.clone(), request_id);
         env.storage().persistent().set(&fulfilled_key, &fulfilled);
         env.storage().persistent().extend_ttl(
             &fulfilled_key,
@@ -571,6 +604,7 @@ impl RandomGenerator {
 
         RandomFulfilled {
             request_id,
+            caller,
             result,
             server_seed,
         }
@@ -595,6 +629,7 @@ impl RandomGenerator {
         admin: Address,
         metadata: EntropySourceMetadata,
     ) -> Result<(), Error> {
+        extend_instance_ttl(&env);
         require_initialized(&env)?;
         require_admin(&env, &admin)?;
 
@@ -619,26 +654,31 @@ impl RandomGenerator {
     // get_result
     // -----------------------------------------------------------------------
 
-    /// Return the fulfilled result for a `request_id`.
+    /// Return the fulfilled result for `caller`'s `request_id`.
     ///
-    /// Returns `RequestNotFound` if the request is still pending or never existed.
-    pub fn get_result(env: Env, request_id: u64) -> Result<FulfilledEntry, Error> {
+    /// Returns `RequestNotFound` if the request is still pending, never
+    /// existed, or belongs to a different caller.
+    pub fn get_result(env: Env, caller: Address, request_id: u64) -> Result<FulfilledEntry, Error> {
         require_initialized(&env)?;
 
         env.storage()
             .persistent()
-            .get(&DataKey::FulfilledRequest(request_id))
+            .get(&DataKey::FulfilledRequest(caller, request_id))
             .ok_or(Error::RequestNotFound)
     }
 
-    /// Return the lifecycle status for a request id.
-    pub fn get_request_status(env: Env, request_id: u64) -> Result<RequestStatus, Error> {
+    /// Return the lifecycle status for `caller`'s request id.
+    pub fn get_request_status(
+        env: Env,
+        caller: Address,
+        request_id: u64,
+    ) -> Result<RequestStatus, Error> {
         require_initialized(&env)?;
 
         if let Some(entry) = env
             .storage()
             .persistent()
-            .get::<DataKey, FulfilledEntry>(&DataKey::FulfilledRequest(request_id))
+            .get::<DataKey, FulfilledEntry>(&DataKey::FulfilledRequest(caller.clone(), request_id))
         {
             return Ok(RequestStatus {
                 request_id,
@@ -654,7 +694,7 @@ impl RandomGenerator {
         if let Some(entry) = env
             .storage()
             .persistent()
-            .get::<DataKey, PendingEntry>(&DataKey::PendingRequest(request_id))
+            .get::<DataKey, PendingEntry>(&DataKey::PendingRequest(caller, request_id))
         {
             return Ok(RequestStatus {
                 request_id,
@@ -750,6 +790,14 @@ impl RandomGenerator {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/// Keep the instance entry (admin, oracle, metadata) alive. Called first in
+/// every state-changing entry point.
+fn extend_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_LEDGERS);
+}
 
 fn require_initialized(env: &Env) -> Result<(), Error> {
     if !env.storage().instance().has(&DataKey::Admin) {
@@ -893,10 +941,10 @@ mod test {
         client.request_random(&game, &1u64, &6u64);
 
         // After request, result is not yet available.
-        let result = client.try_get_result(&1u64);
+        let result = client.try_get_result(&game, &1u64);
         assert!(result.is_err());
 
-        let status = client.get_request_status(&1u64);
+        let status = client.get_request_status(&game, &1u64);
         assert_eq!(status.state, RequestState::Pending);
         assert_eq!(status.max, Some(6u64));
         assert_eq!(status.result, None);
@@ -918,9 +966,9 @@ mod test {
 
         commit_seeds_for_test(&env, &client, &oracle, &[server_seed.clone()]);
         client.request_random(&game, &request_id, &max);
-        client.fulfill_random(&oracle, &request_id, &server_seed);
+        client.fulfill_random(&oracle, &game, &request_id, &server_seed);
 
-        let entry = client.get_result(&request_id);
+        let entry = client.get_result(&game, &request_id);
         let expected = expected_result(&env, &server_seed, request_id, max);
 
         assert_eq!(entry.result, expected);
@@ -958,7 +1006,7 @@ mod test {
         let s = seed(&env, 1);
         commit_seeds_for_test(&env, &client, &oracle, &[s.clone(), seed(&env, 2)]);
         client.request_random(&game, &1u64, &2u64);
-        client.fulfill_random(&oracle, &1u64, &s);
+        client.fulfill_random(&oracle, &game, &1u64, &s);
 
         // Same ID cannot be requested again after fulfillment.
         let result = client.try_request_random(&game, &1u64, &2u64);
@@ -978,10 +1026,10 @@ mod test {
         let s = seed(&env, 2);
         commit_seeds_for_test(&env, &client, &oracle, &[s.clone()]);
         client.request_random(&game, &1u64, &2u64);
-        client.fulfill_random(&oracle, &1u64, &s);
+        client.fulfill_random(&oracle, &game, &1u64, &s);
 
         // Second fulfill on the same request_id must fail.
-        let result = client.try_fulfill_random(&oracle, &1u64, &s);
+        let result = client.try_fulfill_random(&oracle, &game, &1u64, &s);
         assert!(result.is_err());
     }
 
@@ -997,9 +1045,9 @@ mod test {
 
         commit_seeds_for_test(&env, &client, &oracle, &[server_seed.clone()]);
         client.request_random(&game, &request_id, &max);
-        client.fulfill_random(&oracle, &request_id, &server_seed);
+        client.fulfill_random(&oracle, &game, &request_id, &server_seed);
 
-        let status = client.get_request_status(&request_id);
+        let status = client.get_request_status(&game, &request_id);
         assert_eq!(status.state, RequestState::Fulfilled);
         assert_eq!(status.max, Some(max));
         assert_eq!(
@@ -1012,10 +1060,10 @@ mod test {
     #[test]
     fn test_request_status_missing() {
         let env = Env::default();
-        let (client, _, _, _) = setup(&env);
+        let (client, _, _, game) = setup(&env);
         env.mock_all_auths();
 
-        let status = client.get_request_status(&999u64);
+        let status = client.get_request_status(&game, &999u64);
         assert_eq!(status.state, RequestState::Missing);
         assert_eq!(status.caller, None);
         assert_eq!(status.max, None);
@@ -1053,7 +1101,7 @@ mod test {
         client.request_random(&game, &1u64, &2u64);
 
         let impostor = Address::generate(&env);
-        let result = client.try_fulfill_random(&impostor, &1u64, &s);
+        let result = client.try_fulfill_random(&impostor, &game, &1u64, &s);
         assert!(result.is_err());
     }
 
@@ -1073,8 +1121,8 @@ mod test {
             let s = seed(&env, i as u8);
             commit_seeds_for_test(&env, &client, &oracle, &[s.clone()]);
             client.request_random(&game, &i, &max);
-            client.fulfill_random(&oracle, &i, &s);
-            let entry = client.get_result(&i);
+            client.fulfill_random(&oracle, &game, &i, &s);
+            let entry = client.get_result(&game, &i);
             assert!(
                 entry.result < max,
                 "result {} out of range [0, {})",
@@ -1101,8 +1149,8 @@ mod test {
             let s = seed(&env, (i * 37) as u8); // spread out seed bytes
             commit_seeds_for_test(&env, &client, &oracle, &[s.clone()]);
             client.request_random(&game, &i, &max);
-            client.fulfill_random(&oracle, &i, &s);
-            results[i as usize] = client.get_result(&i).result;
+            client.fulfill_random(&oracle, &game, &i, &s);
+            results[i as usize] = client.get_result(&game, &i).result;
         }
 
         // All 8 results should be distinct. With max=1_000_000 and only 8
@@ -1121,10 +1169,10 @@ mod test {
     #[test]
     fn test_fulfill_nonexistent_request_rejected() {
         let env = Env::default();
-        let (client, _, oracle, _) = setup(&env);
+        let (client, _, oracle, game) = setup(&env);
         env.mock_all_auths();
 
-        let result = client.try_fulfill_random(&oracle, &99u64, &seed(&env, 0));
+        let result = client.try_fulfill_random(&oracle, &game, &99u64, &seed(&env, 0));
         assert!(result.is_err());
     }
 
@@ -1172,7 +1220,7 @@ mod test {
         client.request_random(&game, &1u64, &4u64);
 
         // Pending, not yet fulfilled — must return RequestNotFound.
-        let result = client.try_get_result(&1u64);
+        let result = client.try_get_result(&game, &1u64);
         assert!(result.is_err());
     }
 
@@ -1209,11 +1257,11 @@ mod test {
         client.request_random(&game, &10u64, &max_a);
         client.request_random(&game, &20u64, &max_b);
 
-        client.fulfill_random(&oracle, &10u64, &seed_a);
-        client.fulfill_random(&oracle, &20u64, &seed_b);
+        client.fulfill_random(&oracle, &game, &10u64, &seed_a);
+        client.fulfill_random(&oracle, &game, &20u64, &seed_b);
 
-        let entry_a = client.get_result(&10u64);
-        let entry_b = client.get_result(&20u64);
+        let entry_a = client.get_result(&game, &10u64);
+        let entry_b = client.get_result(&game, &20u64);
 
         assert!(entry_a.result < max_a);
         assert!(entry_b.result < max_b);
@@ -1300,8 +1348,8 @@ mod test {
         let s = seed(&env, 0x42);
         commit_seeds_for_test(&env, &client, &oracle, &[s.clone(), s.clone()]);
         client.request_random(&game, &1u64, &max);
-        client.fulfill_random(&oracle, &1u64, &s);
-        let result_before = client.get_result(&1u64).result;
+        client.fulfill_random(&oracle, &game, &1u64, &s);
+        let result_before = client.get_result(&game, &1u64).result;
 
         // Set metadata
         let metadata = EntropySourceMetadata {
@@ -1314,15 +1362,15 @@ mod test {
 
         // Fulfill another request with same seed and max at a different ID
         client.request_random(&game, &2u64, &max);
-        client.fulfill_random(&oracle, &2u64, &s);
-        let result_after = client.get_result(&2u64).result;
+        client.fulfill_random(&oracle, &game, &2u64, &s);
+        let result_after = client.get_result(&game, &2u64).result;
 
         // Results differ because request_id differs, but both are valid
         assert!(result_before < max);
         assert!(result_after < max);
 
         // The original result is unchanged
-        assert_eq!(client.get_result(&1u64).result, result_before);
+        assert_eq!(client.get_result(&game, &1u64).result, result_before);
     }
 
     // ------------------------------------------------------------------
@@ -1476,8 +1524,8 @@ mod test {
         // Make and fulfill two requests
         client.request_random(&game, &1u64, &6u64);
         client.request_random(&game, &2u64, &10u64);
-        client.fulfill_random(&oracle, &1u64, &seed(&env, 1));
-        client.fulfill_random(&oracle, &2u64, &seed(&env, 2));
+        client.fulfill_random(&oracle, &game, &1u64, &seed(&env, 1));
+        client.fulfill_random(&oracle, &game, &2u64, &seed(&env, 2));
 
         let summary = client.get_requester_summary(&game);
 
@@ -1508,8 +1556,8 @@ mod test {
         client.request_random(&game, &2u64, &10u64);
         client.request_random(&game, &3u64, &20u64);
 
-        client.fulfill_random(&oracle, &1u64, &seed(&env, 1));
-        client.fulfill_random(&oracle, &3u64, &seed(&env, 3));
+        client.fulfill_random(&oracle, &game, &1u64, &seed(&env, 1));
+        client.fulfill_random(&oracle, &game, &3u64, &seed(&env, 3));
 
         let summary = client.get_requester_summary(&game);
 
@@ -1550,7 +1598,7 @@ mod test {
         commit_seeds_for_test(&env, &client, &oracle, &[seed(&env, 1)]);
 
         client.request_random(&game, &1u64, &6u64);
-        client.fulfill_random(&oracle, &1u64, &seed(&env, 1));
+        client.fulfill_random(&oracle, &game, &1u64, &seed(&env, 1));
 
         // Call summary multiple times
         let summary1 = client.get_requester_summary(&game);
@@ -1601,14 +1649,14 @@ mod test {
         // Game1 makes 2 requests, fulfills 1
         client.request_random(&game1, &1u64, &6u64);
         client.request_random(&game1, &2u64, &10u64);
-        client.fulfill_random(&oracle, &1u64, &seed(&env, 1));
+        client.fulfill_random(&oracle, &game1, &1u64, &seed(&env, 1));
 
         // Game2 makes 3 requests, fulfills 2
         client.request_random(&game2, &3u64, &6u64);
         client.request_random(&game2, &4u64, &10u64);
         client.request_random(&game2, &5u64, &20u64);
-        client.fulfill_random(&oracle, &3u64, &seed(&env, 3));
-        client.fulfill_random(&oracle, &4u64, &seed(&env, 4));
+        client.fulfill_random(&oracle, &game2, &3u64, &seed(&env, 3));
+        client.fulfill_random(&oracle, &game2, &4u64, &seed(&env, 4));
 
         let summary1 = client.get_requester_summary(&game1);
         let summary2 = client.get_requester_summary(&game2);
@@ -1639,12 +1687,12 @@ mod test {
         client.request_random(&game, &1u64, &2u64);
 
         // Fulfilling with malicious_seed must fail with SeedCommitmentMismatch
-        let res = client.try_fulfill_random(&oracle, &1u64, &malicious_seed);
+        let res = client.try_fulfill_random(&oracle, &game, &1u64, &malicious_seed);
         assert_eq!(res, Err(Ok(Error::SeedCommitmentMismatch)));
 
         // Request can still be fulfilled with honest_seed
-        client.fulfill_random(&oracle, &1u64, &honest_seed);
-        let result = client.get_result(&1u64);
+        client.fulfill_random(&oracle, &game, &1u64, &honest_seed);
+        let result = client.get_result(&game, &1u64);
         assert_eq!(result.server_seed, honest_seed);
     }
 
@@ -1687,13 +1735,13 @@ mod test {
         assert_eq!(client.get_commitment_queue_len(), 0);
 
         // First request bound to s1, second to s2, third to s3
-        client.fulfill_random(&oracle, &100u64, &s1);
-        client.fulfill_random(&oracle, &200u64, &s2);
-        client.fulfill_random(&oracle, &300u64, &s3);
+        client.fulfill_random(&oracle, &game, &100u64, &s1);
+        client.fulfill_random(&oracle, &game, &200u64, &s2);
+        client.fulfill_random(&oracle, &game, &300u64, &s3);
 
-        assert_eq!(client.get_result(&100u64).server_seed, s1);
-        assert_eq!(client.get_result(&200u64).server_seed, s2);
-        assert_eq!(client.get_result(&300u64).server_seed, s3);
+        assert_eq!(client.get_result(&game, &100u64).server_seed, s1);
+        assert_eq!(client.get_result(&game, &200u64).server_seed, s2);
+        assert_eq!(client.get_result(&game, &300u64).server_seed, s3);
     }
 
     #[test]
@@ -1706,5 +1754,205 @@ mod test {
         let commitments = soroban_sdk::Vec::new(&env);
         let res = client.try_commit_seeds(&non_oracle, &commitments);
         assert!(res.is_err());
+    }
+
+    // ------------------------------------------------------------------
+    // Request IDs are namespaced per caller (#1386)
+    // ------------------------------------------------------------------
+
+    fn authorize_second_game(
+        env: &Env,
+        client: &RandomGeneratorClient<'_>,
+        admin: &Address,
+    ) -> Address {
+        let game2 = Address::generate(env);
+        client.authorize(admin, &game2);
+        game2
+    }
+
+    #[test]
+    fn test_two_callers_can_reuse_the_same_request_id() {
+        let env = Env::default();
+        let (client, admin, oracle, game) = setup(&env);
+        let game2 = authorize_second_game(&env, &client, &admin);
+
+        let s1 = seed(&env, 1);
+        let s2 = seed(&env, 2);
+        commit_seeds_for_test(&env, &client, &oracle, &[s1.clone(), s2.clone()]);
+
+        // Both games use request_id 7 (e.g. each passes its own game_id).
+        client.request_random(&game, &7u64, &2u64);
+        client.request_random(&game2, &7u64, &6u64);
+
+        client.fulfill_random(&oracle, &game, &7u64, &s1);
+        client.fulfill_random(&oracle, &game2, &7u64, &s2);
+
+        let first = client.get_result(&game, &7u64);
+        let second = client.get_result(&game2, &7u64);
+        assert_eq!(first.caller, game);
+        assert_eq!(second.caller, game2);
+        assert_eq!(first.server_seed, s1);
+        assert_eq!(second.server_seed, s2);
+        // The derivation formula is unchanged: sha256(seed || request_id_be) % max.
+        assert_eq!(first.result, expected_result(&env, &s1, 7, 2));
+        assert_eq!(second.result, expected_result(&env, &s2, 7, 6));
+    }
+
+    #[test]
+    fn test_duplicate_request_id_from_same_caller_still_rejected() {
+        let env = Env::default();
+        let (client, admin, oracle, game) = setup(&env);
+        let game2 = authorize_second_game(&env, &client, &admin);
+
+        commit_seeds_for_test(
+            &env,
+            &client,
+            &oracle,
+            &[seed(&env, 1), seed(&env, 2), seed(&env, 3)],
+        );
+        client.request_random(&game, &7u64, &2u64);
+        client.request_random(&game2, &7u64, &2u64);
+
+        assert_eq!(
+            client.try_request_random(&game, &7u64, &2u64),
+            Err(Ok(Error::DuplicateRequestId))
+        );
+        assert_eq!(
+            client.try_request_random(&game2, &7u64, &2u64),
+            Err(Ok(Error::DuplicateRequestId))
+        );
+    }
+
+    #[test]
+    fn test_fulfilling_for_the_wrong_caller_is_rejected() {
+        let env = Env::default();
+        let (client, admin, oracle, game) = setup(&env);
+        let game2 = authorize_second_game(&env, &client, &admin);
+
+        let s = seed(&env, 1);
+        commit_seeds_for_test(&env, &client, &oracle, &[s.clone()]);
+        client.request_random(&game, &7u64, &2u64);
+
+        // game2 never requested id 7, so there is nothing to fulfil for it.
+        assert_eq!(
+            client.try_fulfill_random(&oracle, &game2, &7u64, &s),
+            Err(Ok(Error::RequestNotFound))
+        );
+        assert_eq!(
+            client.try_get_result(&game2, &7u64),
+            Err(Ok(Error::RequestNotFound))
+        );
+        assert_eq!(
+            client.get_request_status(&game2, &7u64).state,
+            RequestState::Missing
+        );
+
+        // The real owner is unaffected and can still be fulfilled.
+        assert_eq!(
+            client.get_request_status(&game, &7u64).state,
+            RequestState::Pending
+        );
+        client.fulfill_random(&oracle, &game, &7u64, &s);
+        assert_eq!(
+            client.get_request_status(&game, &7u64).state,
+            RequestState::Fulfilled
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Instance storage TTL (#1385)
+    // ------------------------------------------------------------------
+
+    fn instance_ttl(env: &Env, contract_id: &Address) -> u32 {
+        use soroban_sdk::testutils::storage::Instance as _;
+        env.as_contract(contract_id, || env.storage().instance().get_ttl())
+    }
+
+    fn advance_ledgers(env: &Env, ledgers: u32) {
+        use soroban_sdk::testutils::Ledger;
+        env.ledger().with_mut(|l| l.sequence_number += ledgers);
+    }
+
+    #[test]
+    fn test_state_changing_calls_extend_instance_ttl() {
+        let env = Env::default();
+        let admin = Address::generate(&env);
+        let oracle = Address::generate(&env);
+        let game = Address::generate(&env);
+        let contract_id = env.register(RandomGenerator, ());
+        let client = RandomGeneratorClient::new(&env, &contract_id);
+        env.mock_all_auths();
+
+        // Starts well below the bump value.
+        assert!(instance_ttl(&env, &contract_id) < INSTANCE_BUMP_LEDGERS);
+
+        client.init(&admin, &oracle);
+        assert!(instance_ttl(&env, &contract_id) >= INSTANCE_BUMP_LEDGERS);
+
+        // Let the TTL decay below the threshold before each call so the bump is
+        // observable, but stay short of expiry of the persistent entries.
+        let decay = INSTANCE_BUMP_LEDGERS - INSTANCE_LIFETIME_THRESHOLD + 1_000;
+
+        advance_ledgers(&env, decay);
+        assert!(instance_ttl(&env, &contract_id) < INSTANCE_LIFETIME_THRESHOLD);
+        client.authorize(&admin, &game);
+        assert!(instance_ttl(&env, &contract_id) >= INSTANCE_BUMP_LEDGERS);
+
+        let s = seed(&env, 1);
+        advance_ledgers(&env, decay);
+        commit_seeds_for_test(&env, &client, &oracle, &[s.clone()]);
+        assert!(instance_ttl(&env, &contract_id) >= INSTANCE_BUMP_LEDGERS);
+
+        advance_ledgers(&env, decay);
+        client.request_random(&game, &1u64, &2u64);
+        assert!(instance_ttl(&env, &contract_id) >= INSTANCE_BUMP_LEDGERS);
+
+        advance_ledgers(&env, decay);
+        client.fulfill_random(&oracle, &game, &1u64, &s);
+        assert!(instance_ttl(&env, &contract_id) >= INSTANCE_BUMP_LEDGERS);
+
+        advance_ledgers(&env, decay);
+        client.set_entropy_metadata(
+            &admin,
+            &EntropySourceMetadata {
+                version: String::from_str(&env, "1.0.0"),
+                source_type: String::from_str(&env, "oracle"),
+                hash_algorithm: String::from_str(&env, "sha256"),
+                output_bytes: 8,
+            },
+        );
+        assert!(instance_ttl(&env, &contract_id) >= INSTANCE_BUMP_LEDGERS);
+
+        advance_ledgers(&env, decay);
+        client.revoke(&admin, &game);
+        assert!(instance_ttl(&env, &contract_id) >= INSTANCE_BUMP_LEDGERS);
+    }
+
+    #[test]
+    fn test_contract_still_works_after_original_instance_ttl_passed() {
+        let env = Env::default();
+        let (client, admin, oracle, game) = setup(&env);
+        let contract_id = client.address.clone();
+        env.mock_all_auths();
+
+        // TTL granted by `init`. Each call below renews it; without that, the
+        // instance entry (admin/oracle config) would lapse once the ledger
+        // passes this point and every call would fail until restored.
+        let original_ttl = instance_ttl(&env, &contract_id);
+
+        // Step past the original expiry in two hops, with a state-changing call
+        // in between that renews both the instance and the whitelist entry.
+        advance_ledgers(&env, original_ttl / 2 + 1_000);
+        client.authorize(&admin, &game);
+        advance_ledgers(&env, original_ttl / 2 + 1_000);
+
+        let s = seed(&env, 9);
+        commit_seeds_for_test(&env, &client, &oracle, &[s.clone()]);
+        client.request_random(&game, &1u64, &6u64);
+        client.fulfill_random(&oracle, &game, &1u64, &s);
+        assert_eq!(client.get_result(&game, &1u64).server_seed, s);
+
+        // The instance entry now outlives the original expiry.
+        assert!(instance_ttl(&env, &contract_id) >= INSTANCE_BUMP_LEDGERS);
     }
 }

@@ -147,10 +147,19 @@ describe('oracle worker — fulfilment', () => {
   test('routes dice-roll requests to resolve_roll', async () => {
     const { commitment } = await storeSeed();
     const soroban = makeSoroban({
-      pages: [{
-        events: [randomRequestedEvent({ id: 'ev-dice', requestId: 19, caller: DICE_ROLL_ID, commitment })],
-        cursor: 'ev-dice',
-      }],
+      pages: [
+        {
+          events: [
+            randomRequestedEvent({
+              id: 'ev-dice',
+              requestId: 19,
+              caller: DICE_ROLL_ID,
+              commitment,
+            }),
+          ],
+          cursor: 'ev-dice',
+        },
+      ],
     });
 
     await makeOracle(soroban).processRequests();

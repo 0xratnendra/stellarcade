@@ -25,7 +25,7 @@ provably fair outcomes.
    → Tokens transfer from player to contract
    → RNG request submitted (request_id = game_id, max = 2)
 
-5. Oracle calls rng.fulfill_random(oracle, game_id, server_seed)
+5. Oracle calls rng.fulfill_random(oracle, coin_flip_contract, game_id, server_seed)
    → Result computed: sha256(seed || id) % 2 → 0 or 1
 
 6. Anyone calls resolve_bet(game_id)

@@ -52,7 +52,7 @@ pub enum RngError {
 pub trait RandomGeneratorContract {
     fn request_random(env: Env, caller: Address, request_id: u64, max: u64)
         -> Result<(), RngError>;
-    fn get_result(env: Env, request_id: u64) -> Result<FulfilledEntry, RngError>;
+    fn get_result(env: Env, caller: Address, request_id: u64) -> Result<FulfilledEntry, RngError>;
 }
 
 // ---------------------------------------------------------------------------
@@ -60,6 +60,15 @@ pub trait RandomGeneratorContract {
 // ---------------------------------------------------------------------------
 
 pub const PERSISTENT_BUMP_LEDGERS: u32 = 518_400;
+
+/// Instance storage TTL in ledgers (~30 days at 5 s/ledger). Instance storage
+/// holds the admin, token, RNG address and wager limits; if it were archived
+/// every call would fail until someone restored it.
+pub const INSTANCE_BUMP_LEDGERS: u32 = 518_400;
+
+/// Instance TTL is only extended once it drops below this many ledgers (~15
+/// days), so busy contracts do not pay for a bump on every call.
+pub const INSTANCE_LIFETIME_THRESHOLD: u32 = 259_200;
 const BASIS_POINTS_DIVISOR: i128 = 10_000;
 pub const PLAYER_HISTORY_LIMIT: u32 = 10;
 
@@ -269,6 +278,8 @@ impl CoinFlip {
         max_wager: i128,
         house_edge_bps: i128,
     ) -> Result<(), Error> {
+        extend_instance_ttl(&env);
+
         if env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::AlreadyInitialized);
         }
@@ -309,6 +320,7 @@ impl CoinFlip {
         wager: i128,
         game_id: u64,
     ) -> Result<(), Error> {
+        extend_instance_ttl(&env);
         require_initialized(&env)?;
         let paused: bool = env
             .storage()
@@ -417,6 +429,7 @@ impl CoinFlip {
     /// Resolve a game after the oracle has fulfilled the RNG request.
     /// Anyone can call this — no auth needed since the outcome is deterministic.
     pub fn resolve_bet(env: Env, game_id: u64) -> Result<(), Error> {
+        extend_instance_ttl(&env);
         require_initialized(&env)?;
 
         let game_key = DataKey::Game(game_id);
@@ -436,7 +449,8 @@ impl CoinFlip {
         // Read RNG result — panics if not yet fulfilled
         let rng_addr: Address = env.storage().instance().get(&DataKey::RngContract).unwrap();
         let rng_client = RandomGeneratorClient::new(&env, &rng_addr);
-        let fulfilled = rng_client.try_get_result(&game_id);
+        // Requests are namespaced by caller: this contract submitted the request.
+        let fulfilled = rng_client.try_get_result(&env.current_contract_address(), &game_id);
         let entry = match fulfilled {
             Ok(Ok(e)) => e,
             _ => return Err(Error::RngNotFulfilled),
@@ -517,6 +531,7 @@ impl CoinFlip {
     /// already available the call fails with `RefundNotYetAvailable`; the
     /// game must be settled with `resolve_bet` instead.
     pub fn cancel_stale_bet(env: Env, player: Address, game_id: u64) -> Result<(), Error> {
+        extend_instance_ttl(&env);
         require_initialized(&env)?;
         player.require_auth();
 
@@ -552,7 +567,9 @@ impl CoinFlip {
 
         // A fulfilled RNG request means the game can be settled normally.
         let rng_addr: Address = env.storage().instance().get(&DataKey::RngContract).unwrap();
-        if let Ok(Ok(_)) = RandomGeneratorClient::new(&env, &rng_addr).try_get_result(&game_id) {
+        if let Ok(Ok(_)) = RandomGeneratorClient::new(&env, &rng_addr)
+            .try_get_result(&env.current_contract_address(), &game_id)
+        {
             return Err(Error::RefundNotYetAvailable);
         }
 
@@ -682,6 +699,7 @@ impl CoinFlip {
 
     /// Fund the house bankroll. Admin only.
     pub fn fund_house(env: Env, admin: Address, amount: i128) -> Result<(), Error> {
+        extend_instance_ttl(&env);
         require_initialized(&env)?;
         require_admin(&env, &admin)?;
 
@@ -698,6 +716,7 @@ impl CoinFlip {
 
     /// Withdraw from the house bankroll without dropping below current exposure liability. Admin only.
     pub fn withdraw_house(env: Env, admin: Address, amount: i128) -> Result<(), Error> {
+        extend_instance_ttl(&env);
         require_initialized(&env)?;
         require_admin(&env, &admin)?;
 
@@ -819,6 +838,14 @@ impl CoinFlip {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/// Keep the instance entry (admin, token, RNG address, wager limits) alive.
+/// Called first in every state-changing entry point.
+fn extend_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_LEDGERS);
+}
 
 fn require_initialized(env: &Env) -> Result<(), Error> {
     if !env.storage().instance().has(&DataKey::Admin) {

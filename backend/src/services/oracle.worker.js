@@ -106,7 +106,8 @@ const resolveConfig = (options = {}) => {
     rngContractId,
     coinFlipContractId,
     diceRollContractId,
-    gameRegistry: options.gameRegistry || createGameRegistry({ coinFlipContractId, diceRollContractId }),
+    gameRegistry:
+      options.gameRegistry || createGameRegistry({ coinFlipContractId, diceRollContractId }),
     minQueue: Number.isInteger(minQueue) && minQueue > 0 ? minQueue : DEFAULT_MIN_QUEUE,
     startLedger: startLedger ? Number(startLedger) : null,
   };

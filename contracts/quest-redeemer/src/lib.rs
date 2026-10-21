@@ -1,14 +1,16 @@
 #![no_std]
 
-mod types;
 mod storage;
+mod types;
 
 #[cfg(test)]
 mod test;
 
-use soroban_sdk::{contract, contractimpl, contractevent, Address, Env, contracterror};
-use crate::types::{RedeemerConfig, RedemptionStatus, RedemptionSnapshot, RewardGap};
-use crate::storage::{get_config, set_config, has_redeemed, record_redemption};
+use crate::storage::{get_config, has_redeemed, record_redemption, set_config};
+use crate::types::{
+    OptionalRedeemerConfig, RedeemerConfig, RedemptionSnapshot, RedemptionStatus, RewardGap,
+};
+use soroban_sdk::{contract, contracterror, contractevent, contractimpl, Address, Env};
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -37,7 +39,12 @@ pub struct QuestRedeemer;
 #[contractimpl]
 impl QuestRedeemer {
     /// Initialize the quest redeemer.
-    pub fn init(env: Env, admin: Address, quest_board: Address, token: Address) -> Result<(), Error> {
+    pub fn init(
+        env: Env,
+        admin: Address,
+        quest_board: Address,
+        token: Address,
+    ) -> Result<(), Error> {
         if get_config(&env).is_some() {
             return Err(Error::AlreadyInitialized);
         }
@@ -76,7 +83,7 @@ impl QuestRedeemer {
 
         // Logic check: query QuestBoard to see if user completed quest
         // For now, we assume success or external oracle verification
-        
+
         record_redemption(&env, &user, quest_id);
 
         QuestRedeemed {
@@ -98,7 +105,7 @@ impl QuestRedeemer {
     /// Handles uninitialized state by returning `None` for config and `Paused` status.
     pub fn get_redemption_snapshot(env: Env, user: Address, quest_id: u32) -> RedemptionSnapshot {
         let config = get_config(&env);
-        
+
         let status = if let Some(ref c) = config {
             if c.is_paused {
                 RedemptionStatus::Paused
@@ -112,7 +119,7 @@ impl QuestRedeemer {
         };
 
         RedemptionSnapshot {
-            config,
+            config: OptionalRedeemerConfig::from(config),
             status,
             user,
             quest_id,

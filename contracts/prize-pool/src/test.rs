@@ -551,3 +551,101 @@ fn test_claim_pressure_tracks_reserved_share() {
     assert_eq!(pressure.tracked_balance, 1_000);
     assert_eq!(pressure.reserved_share_bps, 2_500);
 }
+
+// ------------------------------------------------------------------
+// Instance storage TTL (#1385)
+// ------------------------------------------------------------------
+
+fn instance_ttl(env: &Env, contract_id: &Address) -> u32 {
+    use soroban_sdk::testutils::storage::Instance as _;
+    env.as_contract(contract_id, || env.storage().instance().get_ttl())
+}
+
+fn advance_ledgers(env: &Env, ledgers: u32) {
+    env.ledger().with_mut(|l| l.sequence_number += ledgers);
+}
+
+/// Ledgers to advance so the instance TTL drops below the extension threshold
+/// while the persistent entries written by earlier calls stay alive.
+const DECAY: u32 = INSTANCE_BUMP_LEDGERS - INSTANCE_LIFETIME_THRESHOLD + 1_000;
+
+#[test]
+fn test_init_extends_instance_ttl() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let (token_addr, _) = create_token(&env, &token_admin);
+    let contract_id = env.register(PrizePool, ());
+    let client = PrizePoolClient::new(&env, &contract_id);
+    env.mock_all_auths();
+
+    assert!(instance_ttl(&env, &contract_id) < INSTANCE_BUMP_LEDGERS);
+    client.init(&admin, &token_addr);
+    assert!(instance_ttl(&env, &contract_id) >= INSTANCE_BUMP_LEDGERS);
+}
+
+#[test]
+fn test_state_changing_calls_extend_instance_ttl() {
+    let env = Env::default();
+    let (client, admin, funder, _) = setup(&env);
+    env.mock_all_auths();
+    let contract_id = client.address.clone();
+    let winner = Address::generate(&env);
+
+    // fund
+    advance_ledgers(&env, DECAY);
+    assert!(instance_ttl(&env, &contract_id) < INSTANCE_LIFETIME_THRESHOLD);
+    client.fund(&funder, &5_000i128);
+    assert!(instance_ttl(&env, &contract_id) >= INSTANCE_BUMP_LEDGERS);
+
+    // reserve
+    advance_ledgers(&env, DECAY);
+    client.reserve(&admin, &1u64, &2_000i128);
+    assert!(instance_ttl(&env, &contract_id) >= INSTANCE_BUMP_LEDGERS);
+
+    // payout
+    advance_ledgers(&env, DECAY);
+    client.payout(&admin, &winner, &1u64, &500i128);
+    assert!(instance_ttl(&env, &contract_id) >= INSTANCE_BUMP_LEDGERS);
+
+    // release
+    advance_ledgers(&env, DECAY);
+    client.release(&admin, &1u64, &500i128);
+    assert!(instance_ttl(&env, &contract_id) >= INSTANCE_BUMP_LEDGERS);
+
+    // sync
+    advance_ledgers(&env, DECAY);
+    client.sync(&admin);
+    assert!(instance_ttl(&env, &contract_id) >= INSTANCE_BUMP_LEDGERS);
+
+    // rotate_admin
+    advance_ledgers(&env, DECAY);
+    client.rotate_admin(&admin, &Address::generate(&env));
+    assert!(instance_ttl(&env, &contract_id) >= INSTANCE_BUMP_LEDGERS);
+}
+
+#[test]
+fn test_contract_still_works_after_original_instance_ttl_passed() {
+    let env = Env::default();
+    let (client, admin, funder, _) = setup(&env);
+    env.mock_all_auths();
+    let contract_id = client.address.clone();
+    let winner = Address::generate(&env);
+
+    // TTL granted by setup's `init`; each call renews it.
+    let original_ttl = instance_ttl(&env, &contract_id);
+
+    // Step past the original expiry in two hops, with state-changing calls in
+    // between that renew the instance and the persistent accounting entries.
+    advance_ledgers(&env, original_ttl / 2 + 1_000);
+    client.fund(&funder, &5_000i128);
+    client.reserve(&admin, &1u64, &1_000i128);
+    advance_ledgers(&env, original_ttl / 2 + 1_000);
+
+    client.payout(&admin, &winner, &1u64, &400i128);
+    assert_eq!(
+        token_client(&env, &client.get_config_snapshot().token).balance(&winner),
+        400
+    );
+    assert!(instance_ttl(&env, &contract_id) >= INSTANCE_BUMP_LEDGERS);
+}
