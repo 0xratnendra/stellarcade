@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import CoinFlipPlayPanel from "./CoinFlipPlayPanel";
 
@@ -236,6 +237,74 @@ describe("CoinFlipPlayPanel", () => {
     expect(screen.getByTestId("btn-pick-heads-arena")).toBeInTheDocument();
     expect(screen.getByTestId("btn-pick-tails-arena")).toBeInTheDocument();
     expect(screen.getByTestId("btn-confirm-bet-arena")).toBeInTheDocument();
+  });
+
+  it("side selection uses radio inputs: arrow keys move between Heads and Tails", async () => {
+    const user = userEvent.setup();
+    render(<CoinFlipPlayPanel />);
+
+    const headsRadio = screen.getByRole("radio", { name: "Heads" });
+    const tailsRadio = screen.getByRole("radio", { name: "Tails" });
+
+    // Heads is selected by default.
+    expect(headsRadio).toBeChecked();
+    expect(tailsRadio).not.toBeChecked();
+
+    // Tab into the radio group, then arrow to Tails.
+    await user.click(headsRadio);
+    await user.keyboard("{ArrowRight}");
+
+    expect(tailsRadio).toBeChecked();
+    expect(headsRadio).not.toBeChecked();
+  });
+
+  it("announces status changes through the polite live region", async () => {
+    walletState.status = "CONNECTED";
+    walletState.address = PLAYER;
+    walletState.network = "TESTNET";
+    walletState.capabilities = {
+      isConnected: true,
+      isConnecting: false,
+      isReconnecting: false,
+      canConnect: false,
+    };
+    // Never settle so the live region stays visible long enough to assert.
+    coinFlip.placeBet.mockReturnValue(new Promise(() => {}));
+
+    render(<CoinFlipPlayPanel />);
+
+    const statusRegion = screen.getByTestId("coinflip-status");
+    expect(statusRegion).toHaveTextContent("");
+
+    fireEvent.click(screen.getByTestId("btn-confirm-bet"));
+
+    expect(statusRegion).toHaveTextContent(/placing bet/i);
+  });
+
+  it("submit button exposes aria-busy while executing and aria-describedby on error", async () => {
+    networkGuard.isSupported = false;
+    walletState.status = "CONNECTED";
+    walletState.address = PLAYER;
+    walletState.network = "WRONGNET";
+    walletState.capabilities = {
+      isConnected: true,
+      isConnecting: false,
+      isReconnecting: false,
+      canConnect: false,
+    };
+
+    render(<CoinFlipPlayPanel />);
+    const btn = screen.getByTestId("btn-confirm-bet");
+
+    // Not busy before click.
+    expect(btn).not.toHaveAttribute("aria-busy", "true");
+
+    fireEvent.click(btn);
+
+    // Error is present; button links to it.
+    await screen.findByTestId("bet-error");
+    const errorEl = screen.getByTestId("bet-error");
+    expect(btn).toHaveAttribute("aria-describedby", errorEl.id);
   });
 
   it("calls onBetPlaced after a successful bet", async () => {
