@@ -105,6 +105,28 @@ const gameService = {
   },
 
   /**
+   * Fetches one indexed on-chain game by contract id and on-chain game id.
+   *
+   * @param {Object} params
+   * @param {string} params.contractId - Stellar contract id (C...)
+   * @param {string} params.id - On-chain u64 game id as a decimal string
+   * @returns {Promise<Object>} the games row as stored by the indexer
+   * @throws {Error} statusCode 404, code GAME_NOT_FOUND when the round is not
+   *   indexed (yet) — callers use this to tell "not indexed" from "backend
+   *   unavailable".
+   */
+  getIndexedGame: async ({ contractId, id }) => {
+    const game = await GameModel.findByChainGame(contractId, id);
+    if (!game) {
+      const error = new Error('No indexed game matches this contract and game id.');
+      error.statusCode = 404;
+      error.code = 'GAME_NOT_FOUND';
+      throw error;
+    }
+    return game;
+  },
+
+  /**
    * Ranks players by total payout (winnings), optionally scoped to one game type.
    *
    * @param {Object} params

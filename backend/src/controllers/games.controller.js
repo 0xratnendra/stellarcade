@@ -60,6 +60,38 @@ const getRecentGames = async (req, res, next) => {
   }
 };
 
+const CONTRACT_ID_PATTERN = /^[C][A-Z2-7]{55}$/;
+const GAME_ID_PATTERN = /^\d{1,20}$/;
+const U64_MAX = 18446744073709551615n;
+
+const getIndexedGame = async (req, res, next) => {
+  try {
+    const { contractId, id } = req.params;
+
+    if (!CONTRACT_ID_PATTERN.test(contractId)) {
+      const error = new Error(
+        'Path parameter "contractId" must be a Stellar contract id (56 characters, C...).'
+      );
+      error.statusCode = 400;
+      error.code = 'INVALID_CONTRACT_ID';
+      throw error;
+    }
+
+    if (!GAME_ID_PATTERN.test(id) || BigInt(id) > U64_MAX) {
+      const error = new Error('Path parameter "id" must be an on-chain game id (u64, decimal).');
+      error.statusCode = 400;
+      error.code = 'INVALID_GAME_ID';
+      throw error;
+    }
+
+    // Normalise leading zeros so "007" and "7" address the same chain game.
+    const game = await gameService.getIndexedGame({ contractId, id: String(BigInt(id)) });
+    res.status(200).json(game);
+  } catch (error) {
+    next(error);
+  }
+};
+
 const getLeaderboard = async (req, res, next) => {
   try {
     const rawLimit = req.query.limit;
@@ -81,5 +113,6 @@ const getLeaderboard = async (req, res, next) => {
 module.exports = {
   getGames,
   getRecentGames,
+  getIndexedGame,
   getLeaderboard,
 };
