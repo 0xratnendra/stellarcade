@@ -1,15 +1,12 @@
 #![no_std]
 
-//! # Reward Vesting Contract
-//!
-//! Deterministic vesting of game rewards over a configurable cliff + linear
-//! schedule. Rewards may be revoked by the admin before full vesting.
+
 
 use soroban_sdk::{
     contract, contractevent, contractimpl, contracttype, token, Address, Env, Map, Vec,
 };
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -46,7 +43,7 @@ pub enum DataKey {
     UserSchedules(Address),
 }
 
-// ─── Events ───────────────────────────────────────────────────────────────────
+
 
 #[contractevent]
 pub struct VestingInitialized {
@@ -74,7 +71,7 @@ pub struct VestingRevoked {
     pub unvested: i128,
 }
 
-// ─── Contract ─────────────────────────────────────────────────────────────────
+
 
 #[contract]
 pub struct RewardVestingContract;
@@ -95,12 +92,7 @@ impl RewardVestingContract {
         VestingInitialized { admin, token_address }.publish(&env);
     }
 
-    /// Create a new vesting schedule for `user`.
-    ///
-    /// * `amount`             – tokens to vest (> 0)
-    /// * `start_timestamp`    – when vesting begins (UNIX seconds)
-    /// * `cliff_seconds`      – seconds from start before any claim
-    /// * `duration_seconds`   – total linear-vesting window (> 0)
+    
     pub fn create_vesting_schedule(
         env: Env,
         user: Address,
@@ -123,7 +115,7 @@ impl RewardVestingContract {
             panic!("Invalid duration: must be positive");
         }
 
-        // Transfer tokens from admin into the contract.
+       
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let token = token::Client::new(&env, &token_addr);
         token.transfer(&admin, &env.current_contract_address(), &amount);
@@ -170,7 +162,7 @@ impl RewardVestingContract {
         schedule_id
     }
 
-    /// Claim all currently vested tokens for `user`. Returns amount transferred.
+    
     pub fn claim_vested(env: Env, user: Address) -> i128 {
         user.require_auth();
 
