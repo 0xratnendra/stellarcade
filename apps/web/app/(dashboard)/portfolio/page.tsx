@@ -6,6 +6,7 @@ import { Portfolio, type PortfolioState } from "../../../src/components/Portfoli
 import { TokenSwapRateCalculator } from "../../../src/components";
 import { useWalletStatus } from "../../../src/hooks/useWalletStatus";
 import { createProfileApiClient } from "../../../src/services/profile-service";
+import { getBadgeClientConfig, getPlayerBadges } from "../../../src/services/badge-client";
 
 const EMPTY_SECTION = { status: "ready" as const, items: [] };
 
@@ -26,6 +27,8 @@ export default function PortfolioPage() {
   const router = useRouter();
   const wallet = useWalletStatus();
   const [walletSection, setWalletSection] = useState<PortfolioState["wallet"]>(EMPTY_SECTION);
+  const [badgesSection, setBadgesSection] = useState<PortfolioState["collectibles"]>(EMPTY_SECTION);
+  const badgesConfigured = getBadgeClientConfig() !== null;
 
   useEffect(() => {
     if (!wallet.capabilities.isConnected || !wallet.address) {
@@ -62,10 +65,36 @@ export default function PortfolioPage() {
     };
   }, [wallet.capabilities.isConnected, wallet.address, wallet.network]);
 
+  useEffect(() => {
+    if (!badgesConfigured || !wallet.capabilities.isConnected || !wallet.address) {
+      setBadgesSection(EMPTY_SECTION);
+      return;
+    }
+
+    let cancelled = false;
+    setBadgesSection({ status: "loading", items: [] });
+
+    getPlayerBadges(wallet.address).then((badges) => {
+      if (cancelled) return;
+      setBadgesSection({ status: "ready", items: badges });
+    }).catch((err: unknown) => {
+      if (cancelled) return;
+      setBadgesSection({
+        status: "error",
+        items: [],
+        errorMessage: err instanceof Error ? err.message : "Failed to load badges.",
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [badgesConfigured, wallet.capabilities.isConnected, wallet.address]);
+
   const state: PortfolioState = {
     wallet: walletSection,
     rewards: EMPTY_SECTION,
-    collectibles: EMPTY_SECTION,
+    collectibles: badgesConfigured ? badgesSection : EMPTY_SECTION,
   };
 
   return (

@@ -19,6 +19,12 @@ import {
   scanAccountHygiene,
   type HygieneScanResult,
 } from "../../../src/utils/account-hygiene";
+import {
+  buildCleanupTransaction,
+  calculateReclaimedXlm,
+  getCleanupConfig,
+} from "../../../src/services/account-cleanup";
+import defaultFreighterAdapter from "../../../src/services/freighter-adapter";
 
 const DEMO_PUBLIC_KEY = "GBBD47IF6LWK7P7MDEVSCADEPLAYERHYGIENE777SAMPLEPUBLICKEY";
 
@@ -31,7 +37,9 @@ export default function CleanupPage() {
   const [reclaimSuccess, setReclaimSuccess] = useState<{
     reclaimedXlm: number;
     count: number;
+    txHash?: string;
   } | null>(null);
+  const [cleanupError, setCleanupError] = useState<string | null>(null);
 
   const handleScan = (addressToScan: string) => {
     const res = scanAccountHygiene(addressToScan);
@@ -60,36 +68,64 @@ export default function CleanupPage() {
   const handleExecuteCleanup = async () => {
     if (!scanResult || selectedIds.length === 0) return;
     setIsCleaning(true);
+    setCleanupError(null);
 
-    // Simulate batch transaction execution to remove trustlines/signers on Stellar
-    if (typeof process !== "undefined" && process.env.NODE_ENV === "test") {
-      await Promise.resolve();
-    } else {
-      await new Promise((resolve) => setTimeout(resolve, 600));
+    let config: ReturnType<typeof getCleanupConfig>;
+    try {
+      config = getCleanupConfig();
+    } catch (err) {
+      setCleanupError(err instanceof Error ? err.message : String(err));
+      setIsCleaning(false);
+      return;
     }
 
-    const reclaimedAmount = selectedIds.length * 0.5;
-    const remainingSubentries = scanResult.reclaimableSubentries.filter(
-      (s) => !selectedIds.includes(s.id),
-    );
+    const toRemove = scanResult.reclaimableSubentries.filter((s) => selectedIds.includes(s.id));
+    try {
+      const { Horizon } = await import("@stellar/stellar-sdk");
+      const horizon = new Horizon.Server(config.horizonUrl);
 
-    setScanResult({
-      ...scanResult,
-      totalSubentries: scanResult.totalSubentries - selectedIds.length,
-      totalLockedReserveXlm: scanResult.totalLockedReserveXlm - reclaimedAmount,
-      reclaimableSubentries: remainingSubentries,
-      reclaimableReserveXlm: remainingSubentries.reduce((a, b) => a + b.lockedReserveXlm, 0),
-    });
+      const beforeAccount = await horizon.loadAccount(scanResult.accountPublicKey);
+      const tx = await buildCleanupTransaction(
+        scanResult.accountPublicKey,
+        toRemove,
+        config.networkPassphrase,
+        { horizon },
+      );
+      const signedXdr = await defaultFreighterAdapter.signTransaction(tx.toXDR(), {
+        networkPassphrase: config.networkPassphrase,
+      });
+      const { TransactionBuilder } = await import("@stellar/stellar-sdk");
+      const signed = TransactionBuilder.fromXDR(signedXdr, config.networkPassphrase);
+      const result = await horizon.submitTransaction(signed);
+      const afterAccount = await horizon.loadAccount(scanResult.accountPublicKey);
+      const reclaimedXlm = calculateReclaimedXlm(beforeAccount, afterAccount);
 
-    setReclaimSuccess({
-      reclaimedXlm: reclaimedAmount,
-      count: selectedIds.length,
-    });
-    setSelectedIds([]);
-    setIsCleaning(false);
+      const remainingSubentries = scanResult.reclaimableSubentries.filter(
+        (s) => !selectedIds.includes(s.id),
+      );
+      setScanResult({
+        ...scanResult,
+        totalSubentries: scanResult.totalSubentries - toRemove.length,
+        totalLockedReserveXlm: scanResult.totalLockedReserveXlm - toRemove.reduce((a, b) => a + b.lockedReserveXlm, 0),
+        reclaimableSubentries: remainingSubentries,
+        reclaimableReserveXlm: remainingSubentries.reduce((a, b) => a + b.lockedReserveXlm, 0),
+      });
+      setReclaimSuccess({ reclaimedXlm, count: toRemove.length, txHash: result.hash });
+      setSelectedIds([]);
+    } catch (err) {
+      setCleanupError(
+        err instanceof Error ? err.message : "Cleanup transaction failed. Please try again.",
+      );
+    } finally {
+      setIsCleaning(false);
+    }
   };
 
-  const selectedReclaimValue = selectedIds.length * 0.5;
+  const selectedReclaimValue = scanResult
+    ? scanResult.reclaimableSubentries
+        .filter((s) => selectedIds.includes(s.id))
+        .reduce((a, b) => a + b.lockedReserveXlm, 0)
+    : 0;
   const allSelected =
     !!scanResult && selectedIds.length === scanResult.reclaimableSubentries.length;
 
@@ -135,6 +171,16 @@ export default function CleanupPage() {
         </div>
       </PageHeader>
 
+      {cleanupError && (
+        <div
+          role="alert"
+          data-testid="cleanup-error-banner"
+          className="rounded-xl border border-rose-400/30 bg-rose-400/5 p-4 text-sm text-rose-300"
+        >
+          {cleanupError}
+        </div>
+      )}
+
       {reclaimSuccess && (
         <div
           data-testid="reclaim-success-banner"
@@ -148,6 +194,17 @@ export default function CleanupPage() {
               Successfully removed {reclaimSuccess.count} subentry item(s) and released +
               {reclaimSuccess.reclaimedXlm.toFixed(1)} XLM back to your spendable balance.
             </p>
+            {reclaimSuccess.txHash && (
+              <a
+                href={`https://stellar.expert/explorer/testnet/tx/${reclaimSuccess.txHash}`}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-1 block font-mono text-xs text-sky-300 underline"
+                data-testid="cleanup-tx-link"
+              >
+                {reclaimSuccess.txHash}
+              </a>
+            )}
           </div>
         </div>
       )}
