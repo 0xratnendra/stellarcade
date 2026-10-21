@@ -16,6 +16,7 @@
 const crypto = require('crypto');
 const StellarSdk = require('@stellar/stellar-sdk');
 const logger = require('../utils/logger');
+const { createGameRegistry } = require('../config/games');
 
 const CURSOR_NAME = 'oracle';
 const RANDOM_REQUESTED_TOPIC = 'random_requested';
@@ -85,6 +86,7 @@ const resolveConfig = (options = {}) => {
   const secret = options.secretKey || env.ORACLE_SECRET_KEY;
   const rngContractId = options.rngContractId || env.RANDOM_GENERATOR_CONTRACT_ID;
   const coinFlipContractId = options.coinFlipContractId || env.COIN_FLIP_CONTRACT_ID;
+  const diceRollContractId = options.diceRollContractId || env.DICE_ROLL_CONTRACT_ID;
 
   const missing = [];
   if (!secret) missing.push('ORACLE_SECRET_KEY');
@@ -103,6 +105,8 @@ const resolveConfig = (options = {}) => {
     keypair: StellarSdk.Keypair.fromSecret(secret),
     rngContractId,
     coinFlipContractId,
+    diceRollContractId,
+    gameRegistry: options.gameRegistry || createGameRegistry({ coinFlipContractId, diceRollContractId }),
     minQueue: Number.isInteger(minQueue) && minQueue > 0 ? minQueue : DEFAULT_MIN_QUEUE,
     startLedger: startLedger ? Number(startLedger) : null,
   };
@@ -117,7 +121,7 @@ const createOracle = (options = {}) => {
   const config = resolveConfig(options);
   const db = options.db || require('../config/database');
   const soroban = options.soroban || require('./soroban.service');
-  const { keypair, rngContractId, coinFlipContractId, minQueue } = config;
+  const { keypair, rngContractId, gameRegistry, minQueue } = config;
   const oracleAddress = () => new StellarSdk.Address(keypair.publicKey()).toScVal();
 
   /**
@@ -179,20 +183,20 @@ const createOracle = (options = {}) => {
       .update({ status: 'revealed', updated_at: db.fn.now() });
   };
 
-  const resolveGame = async (gameId) => {
+  const resolveGame = async (game, gameId) => {
     try {
       const { txHash } = await soroban.invoke(
-        coinFlipContractId,
-        'resolve_bet',
+        game.contractId,
+        game.resolveMethod,
         [u64(gameId)],
         keypair
       );
-      logger.info('Oracle resolved coin-flip game', { gameId, txHash });
+      logger.info('Oracle resolved game', { game: game.name, gameId, txHash });
     } catch (err) {
-      if (err.contractErrorCode !== COIN_FLIP_ERROR_GAME_ALREADY_RESOLVED) {
-        throw sanitizedInvokeError('resolve_bet', gameId, err);
+      if (err.contractErrorCode !== game.alreadyResolvedErrorCode) {
+        throw sanitizedInvokeError(game.resolveMethod, gameId, err);
       }
-      logger.info('Coin-flip game was already resolved', { gameId });
+      logger.info('Game was already resolved', { game: game.name, gameId });
     }
   };
 
@@ -230,10 +234,15 @@ const createOracle = (options = {}) => {
       await fulfil(seedRow, requestId);
     }
 
-    // coin-flip uses its game_id as the request_id.
-    if (caller === coinFlipContractId) {
-      await resolveGame(requestId);
+    const game = gameRegistry[caller];
+    if (!game) {
+      logger.warn('Randomness request came from an unregistered game; skipping resolution', {
+        caller,
+        requestId,
+      });
+      return;
     }
+    await resolveGame(game, requestId);
   };
 
   /**
@@ -315,7 +324,7 @@ const startOracleWorker = (options = {}) => {
   logger.info('Starting RNG oracle worker', {
     oracle: oracle.config.keypair.publicKey(),
     rngContractId: oracle.config.rngContractId,
-    coinFlipContractId: oracle.config.coinFlipContractId,
+    games: Object.values(oracle.config.gameRegistry).map((game) => game.name),
     minQueue: oracle.config.minQueue,
     pollIntervalMs,
   });

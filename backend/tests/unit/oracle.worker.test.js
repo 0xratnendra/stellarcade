@@ -18,6 +18,7 @@ const {
 const ORACLE = StellarSdk.Keypair.random();
 const RNG_ID = StellarSdk.StrKey.encodeContract(Buffer.alloc(32, 1));
 const COIN_FLIP_ID = StellarSdk.StrKey.encodeContract(Buffer.alloc(32, 2));
+const DICE_ROLL_ID = StellarSdk.StrKey.encodeContract(Buffer.alloc(32, 4));
 const OTHER_GAME_ID = StellarSdk.StrKey.encodeContract(Buffer.alloc(32, 3));
 
 const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest();
@@ -88,6 +89,7 @@ const makeOracle = (soroban) =>
     secretKey: ORACLE.secret(),
     rngContractId: RNG_ID,
     coinFlipContractId: COIN_FLIP_ID,
+    diceRollContractId: DICE_ROLL_ID,
     minQueue: 20,
   });
 
@@ -140,6 +142,23 @@ describe('oracle worker — fulfilment', () => {
       .first();
     expect(row.status).toBe('revealed');
     expect(String(row.request_id)).toBe('42');
+  });
+
+  test('routes dice-roll requests to resolve_roll', async () => {
+    const { commitment } = await storeSeed();
+    const soroban = makeSoroban({
+      pages: [{
+        events: [randomRequestedEvent({ id: 'ev-dice', requestId: 19, caller: DICE_ROLL_ID, commitment })],
+        cursor: 'ev-dice',
+      }],
+    });
+
+    await makeOracle(soroban).processRequests();
+
+    expect(invokeCalls(soroban, 'resolve_roll')).toEqual([
+      { contractId: DICE_ROLL_ID, args: [19n] },
+    ]);
+    expect(invokeCalls(soroban, 'resolve_bet')).toHaveLength(0);
   });
 
   test('does not call resolve_bet for requests from other game contracts', async () => {
