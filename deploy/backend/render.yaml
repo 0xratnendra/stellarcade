@@ -1,0 +1,56 @@
+# Render Blueprint for the Stellarcade backend API on Stellar testnet.
+# Render does not look here by default — when creating the Blueprint in the
+# dashboard, set Blueprint Path to: deploy/backend/render.yaml
+services:
+  - type: web
+    name: stellarcade-api
+    runtime: docker
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
+    healthCheckPath: /api/health
+    preDeployCommand: npm run migrate
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: stellarcade
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: stellarcade-redis
+          type: keyvalue
+          property: connectionString
+      - key: STELLAR_NETWORK
+        value: testnet
+      - key: HORIZON_URL
+        value: https://horizon-testnet.stellar.org
+      - key: SOROBAN_RPC_URL
+        value: https://soroban-testnet.stellar.org
+      - key: NETWORK_PASSPHRASE
+        value: "Test SDF Network ; September 2015"
+      - key: ORACLE_ENABLED
+        value: "true"
+      - key: INDEXER_ENABLED
+        value: "true"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ORACLE_SECRET_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: COIN_FLIP_CONTRACT_ID
+        sync: false
+      - key: RANDOM_GENERATOR_CONTRACT_ID
+        sync: false
+
+  - type: keyvalue
+    name: stellarcade-redis
+    ipAllowList: []
+
+databases:
+  - name: stellarcade
+    databaseName: stellarcade
+    user: stellarcade
