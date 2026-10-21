@@ -97,6 +97,10 @@ members = [
     "contract-address-registry",
     "reward-router",
     "tournament-lobby",
+    "jackpot-pool",
+    "lending-pool",
+    "quest-redeemer",
+    "reserve-manager",
 ]
 
 exclude = [
@@ -162,16 +166,6 @@ exclude = [
     "upgrade-mechanism",
     "wallet-claims-v2",
     "wallet-reserves",
-    # These fail specifically at the `cargo test --workspace` / --tests step
-    # (native host target), not the wasm build/clippy passes above: either a
-    # missing `use soroban_sdk::testutils::Ledger;` import in test code
-    # (jackpot-pool, lending-pool), or an `Option<CustomStruct>` #[contracttype] that
-    # doesn't satisfy soroban's XDR conversion bounds (quest-redeemer,
-    # reserve-manager).
-    "jackpot-pool",
-    "lending-pool",
-    "quest-redeemer",
-    "reserve-manager",
     # Awaiting seed commitment migration milestone
     "dice-roll",
     "number-guess",

@@ -1,5 +1,5 @@
-use soroban_sdk::{contracttype, Address, Env};
 use crate::types::RedeemerConfig;
+use soroban_sdk::{contracttype, Address, Env};
 
 #[contracttype]
 #[derive(Clone)]
@@ -27,5 +27,7 @@ pub fn has_redeemed(env: &Env, user: &Address, quest_id: u32) -> bool {
 pub fn record_redemption(env: &Env, user: &Address, quest_id: u32) {
     let key = DataKey::Redemption(user.clone(), quest_id);
     env.storage().persistent().set(&key, &true);
-    env.storage().persistent().extend_ttl(&key, PERSISTENT_BUMP_THRESHOLD, PERSISTENT_BUMP_LEDGERS);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, PERSISTENT_BUMP_THRESHOLD, PERSISTENT_BUMP_LEDGERS);
 }

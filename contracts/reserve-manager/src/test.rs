@@ -37,7 +37,7 @@ fn test_init_and_snapshot() {
     s.client.init(&s.admin, &s.treasury);
 
     let snapshot = s.client.get_full_snapshot();
-    assert!(snapshot.config.is_some());
+    assert!(matches!(snapshot.config, OptionalManagerConfig::Some(_)));
     assert_eq!(snapshot.reserves.len(), 0);
     assert!(!s.client.is_paused());
 }
@@ -71,9 +71,18 @@ fn test_reserve_status_thresholds() {
     s.client.update_reserve(&asset_b, &600, &1000);
     s.client.update_reserve(&asset_c, &200, &1000);
 
-    assert_eq!(s.client.get_reserve_for(&asset_a).unwrap().status, ReserveStatus::Healthy);
-    assert_eq!(s.client.get_reserve_for(&asset_b).unwrap().status, ReserveStatus::BelowTarget);
-    assert_eq!(s.client.get_reserve_for(&asset_c).unwrap().status, ReserveStatus::Critical);
+    assert_eq!(
+        s.client.get_reserve_for(&asset_a).unwrap().status,
+        ReserveStatus::Healthy
+    );
+    assert_eq!(
+        s.client.get_reserve_for(&asset_b).unwrap().status,
+        ReserveStatus::BelowTarget
+    );
+    assert_eq!(
+        s.client.get_reserve_for(&asset_c).unwrap().status,
+        ReserveStatus::Critical
+    );
 }
 
 #[test]
@@ -94,7 +103,7 @@ fn test_uninitialized_snapshot() {
     let client = ReserveManagerClient::new(&env, &contract_id);
 
     let snapshot = client.get_full_snapshot();
-    assert!(snapshot.config.is_none());
+    assert_eq!(snapshot.config, OptionalManagerConfig::None);
     assert_eq!(snapshot.reserves.len(), 0);
 }
 
@@ -129,7 +138,7 @@ fn test_manager_threshold_summary_counts() {
     let critical = Address::generate(&s.env);
 
     s.client.update_reserve(&healthy, &1000, &1000); // Healthy
-    s.client.update_reserve(&below, &600, &1000);    // BelowTarget
+    s.client.update_reserve(&below, &600, &1000); // BelowTarget
     s.client.update_reserve(&critical, &200, &1000); // Critical
 
     let summary = s.client.manager_threshold_summary();

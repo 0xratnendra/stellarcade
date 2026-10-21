@@ -1,5 +1,5 @@
-use soroban_sdk::{contracttype, Address, Env, Vec};
 use crate::types::{ManagerConfig, ReserveState};
+use soroban_sdk::{contracttype, Address, Env, Vec};
 
 #[contracttype]
 #[derive(Clone)]
@@ -21,7 +21,10 @@ pub fn set_config(env: &Env, config: &ManagerConfig) {
 }
 
 pub fn get_assets(env: &Env) -> Vec<Address> {
-    env.storage().instance().get(&DataKey::Assets).unwrap_or(Vec::new(env))
+    env.storage()
+        .instance()
+        .get(&DataKey::Assets)
+        .unwrap_or(Vec::new(env))
 }
 
 pub fn set_assets(env: &Env, assets: &Vec<Address>) {
@@ -32,7 +35,11 @@ pub fn get_reserve_state(env: &Env, asset: &Address) -> Option<ReserveState> {
     let key = DataKey::Reserve(asset.clone());
     let state = env.storage().persistent().get(&key);
     if state.is_some() {
-        env.storage().persistent().extend_ttl(&key, PERSISTENT_BUMP_THRESHOLD, PERSISTENT_BUMP_LEDGERS);
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_BUMP_THRESHOLD,
+            PERSISTENT_BUMP_LEDGERS,
+        );
     }
     state
 }
@@ -40,5 +47,7 @@ pub fn get_reserve_state(env: &Env, asset: &Address) -> Option<ReserveState> {
 pub fn set_reserve_state(env: &Env, asset: &Address, state: &ReserveState) {
     let key = DataKey::Reserve(asset.clone());
     env.storage().persistent().set(&key, state);
-    env.storage().persistent().extend_ttl(&key, PERSISTENT_BUMP_THRESHOLD, PERSISTENT_BUMP_LEDGERS);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, PERSISTENT_BUMP_THRESHOLD, PERSISTENT_BUMP_LEDGERS);
 }
