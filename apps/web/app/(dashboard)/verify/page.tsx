@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Dices,
   Sparkles,
+  ArrowRight,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -40,6 +41,42 @@ interface ManualInput {
 }
 
 const DEFAULT_INPUT: ManualInput = { ...ROUND_PRESETS[0].input, claimedResult: "" };
+
+/**
+ * The four commit-reveal steps the random-generator contract actually runs.
+ * Kept in sync with `derive_result` / `fulfill_random` in
+ * contracts/random-generator/src/lib.rs — see the copy in about/page.tsx.
+ */
+const FAIRNESS_FLOW = [
+  {
+    step: "1",
+    title: "The oracle commits",
+    caption: "Before any bet exists, the oracle publishes sha256(seed) to the random-generator contract. The seed itself stays hidden.",
+  },
+  {
+    step: "2",
+    title: "Your bet locks it in",
+    caption: "place_bet pops the oldest commitment from the on-chain queue. From here that hash cannot be swapped for your round.",
+  },
+  {
+    step: "3",
+    title: "The seed is revealed",
+    caption: "The contract re-hashes the revealed seed and rejects it unless it equals the commitment, then derives the result itself.",
+  },
+  {
+    step: "4",
+    title: "You recompute it",
+    caption: "Open this page with your round's id: the same formula runs in your browser and the checks below must all pass.",
+  },
+] as const;
+
+/** Network-scoped explorer link for the deployed random-generator contract. */
+function randomGeneratorExplorerUrl(): string | null {
+  const contractId = process.env.NEXT_PUBLIC_RANDOM_GENERATOR_CONTRACT_ID;
+  if (!contractId) return null;
+  const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK || "testnet";
+  return `https://stellar.expert/explorer/${network}/contract/${contractId}`;
+}
 
 /** Reads a fulfilled request (and its coin-flip game, if any) from chain. */
 async function loadOnChainRound(requestId: bigint) {
@@ -455,6 +492,122 @@ function VerifyPageContent() {
           )}
         </SectionCard>
       </div>
+
+      <SectionCard id="how-it-works" icon={<ShieldCheck />} title="How this works">
+        <p className="text-[13px] leading-relaxed text-muted-foreground">
+          Coin-flip outcomes are decided by the <span className="font-mono text-foreground">random-generator</span>{" "}
+          contract&apos;s commit-reveal scheme, not by StellarCade&apos;s servers. Nothing below needs to be
+          trusted: each step is an on-chain call anyone can read, and this page recomputes the maths in your own
+          browser.
+        </p>
+
+        {/* Four-step commit-reveal diagram: vertical on small screens, a row of
+            linked boxes on wide ones. */}
+        <div
+          data-testid="fairness-flow"
+          className="flex flex-col items-stretch gap-2 xl:flex-row xl:items-center"
+        >
+          {FAIRNESS_FLOW.map((item, index) => (
+            <React.Fragment key={item.step}>
+              <div className="flex min-w-0 flex-1 flex-col gap-1 rounded-xl border border-primary/25 bg-primary/5 p-4">
+                <span className="flex size-6 items-center justify-center rounded-full bg-primary/15 font-mono text-xs font-bold text-primary">
+                  {item.step}
+                </span>
+                <h3 className="mt-1 text-sm font-bold text-foreground">{item.title}</h3>
+                <p className="text-xs leading-relaxed text-muted-foreground">{item.caption}</p>
+              </div>
+              {index < FAIRNESS_FLOW.length - 1 ? (
+                <ArrowRight
+                  aria-hidden
+                  className="mx-auto size-4 shrink-0 rotate-90 text-primary xl:mx-0 xl:rotate-0"
+                />
+              ) : null}
+            </React.Fragment>
+          ))}
+        </div>
+
+        <div data-testid="fairness-formula" className="rounded-xl border border-border bg-background/40 p-4">
+          <span className="text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+            The contract&apos;s formula
+          </span>
+          <p className="mt-2 overflow-x-auto whitespace-nowrap font-mono text-xs text-primary">
+            result = first 8 bytes of sha256(server_seed ‖ round_id) as big-endian, % 2
+          </p>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            round_id is the game id, 8 bytes big-endian. 0 is Heads, 1 is Tails. The oracle only supplies the
+            seed — the contract derives the result when it accepts the reveal, and coin-flip&apos;s{" "}
+            <span className="font-mono">resolve_bet</span> just reads it.
+          </p>
+        </div>
+
+        <div>
+          <h3 className="text-[11px] font-semibold tracking-[0.14em] text-foreground uppercase">
+            What the contracts enforce
+          </h3>
+          <ul className="mt-2 flex flex-col gap-1.5 text-[13px] leading-relaxed text-muted-foreground">
+            <li>
+              No commitment, no bet: <span className="font-mono">place_bet</span> calls{" "}
+              <span className="font-mono">request_random</span>, which fails with{" "}
+              <span className="font-mono">NoCommitmentAvailable</span> while the oracle&apos;s queue is empty.
+            </li>
+            <li>
+              The commitment is popped and bound to your game id in the same transaction that places the bet, so
+              the hash deciding your round is fixed on-chain before anyone can react to it.
+            </li>
+            <li>
+              The reveal is checked, not trusted: <span className="font-mono">fulfill_random</span> recomputes{" "}
+              <span className="font-mono">sha256(seed)</span> and rejects anything that does not equal the
+              commitment (<span className="font-mono">SeedCommitmentMismatch</span>), then stores the derived
+              result for <span className="font-mono">/verify</span> to re-check.
+            </li>
+          </ul>
+        </div>
+
+        <div data-testid="fairness-limits">
+          <h3 className="text-[11px] font-semibold tracking-[0.14em] text-foreground uppercase">
+            What it does not protect against
+          </h3>
+          <ul className="mt-2 flex flex-col gap-1.5 text-[13px] leading-relaxed text-muted-foreground">
+            <li>
+              <span className="text-foreground">A reveal can be refused.</span> Commit-reveal stops the seed
+              changing after your bet; it cannot force the oracle to publish it. If the oracle never fulfils the
+              request, the round stays pending with no result — and the coin-flip contract covers you: after{" "}
+              <span className="font-mono">RefundTimeoutLedgers</span> (17,280 ledgers, about 24 hours) you can
+              call <span className="font-mono">cancel_stale_bet</span> to reclaim your full wager. If the seed
+              lands first, that refund is refused and the round settles instead; a refunded game can never be
+              resolved, so you get a refund or a payout, never both.
+            </li>
+            <li>
+              <span className="text-foreground">The oracle knows the seeds it commits.</span> Commitment fixes
+              them before your bet — it does not hide them from the oracle, only SHA-256 preimage resistance
+              hides them from everyone else.
+            </li>
+          </ul>
+        </div>
+
+        {randomGeneratorExplorerUrl() ? (
+          <div className="border-t border-border/70 pt-4">
+            <span className="text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+              Deployed random-generator contract
+            </span>
+            <p
+              className="mt-1 break-all font-mono text-xs text-muted-foreground"
+              data-testid="rng-contract-address"
+            >
+              {process.env.NEXT_PUBLIC_RANDOM_GENERATOR_CONTRACT_ID}
+            </p>
+            <a
+              href={randomGeneratorExplorerUrl()!}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1.5 inline-flex items-center gap-1.5 font-mono text-xs font-semibold text-primary transition-opacity hover:opacity-80"
+              data-testid="rng-contract-explorer-link"
+            >
+              View it on stellar.expert
+            </a>
+          </div>
+        ) : null}
+      </SectionCard>
     </motion.div>
   );
 }

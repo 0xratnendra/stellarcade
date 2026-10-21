@@ -17,6 +17,7 @@ import VerifyPage from "./page";
 // Contract-generated vector (see src/utils/round-verifier.test.ts): request 42 → 1.
 const SEED = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
 const COMMITMENT = "630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd";
+const RNG_ID = "CD3VAX3DZEGWEMMPK35MYPS43HMFTNHZK5SY22JLEHHENXJATWP4HJY5";
 
 describe("VerifyPage", () => {
   beforeEach(() => {
@@ -27,6 +28,7 @@ describe("VerifyPage", () => {
     vi.stubEnv("NEXT_PUBLIC_RANDOM_GENERATOR_CONTRACT_ID", "CD3VAX3DZEGWEMMPK35MYPS43HMFTNHZK5SY22JLEHHENXJATWP4HJY5");
     vi.stubEnv("NEXT_PUBLIC_SOROBAN_RPC_URL", "https://soroban-testnet.stellar.org");
     vi.stubEnv("NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE", "Test SDF Network ; September 2015");
+    vi.stubEnv("NEXT_PUBLIC_STELLAR_NETWORK", "testnet");
   });
 
   it("renders the contract-formula inputs", () => {
@@ -104,5 +106,39 @@ describe("VerifyPage", () => {
     });
     fireEvent.click(screen.getByTestId("btn-copy-report"));
     expect(writeTextMock).toHaveBeenCalled();
+  });
+
+  it("explains the commit-reveal scheme with working links", () => {
+    render(<VerifyPage />);
+
+    // The section carries the anchor other pages link to (#how-it-works).
+    const heading = screen.getByRole("heading", { level: 2, name: /How this works/i });
+    expect(heading).toHaveAttribute("id", "how-it-works");
+
+    // Four-step diagram, in order.
+    const flow = screen.getByTestId("fairness-flow");
+    expect(flow).toHaveTextContent(/The oracle commits/);
+    expect(flow).toHaveTextContent(/Your bet locks it in/);
+    expect(flow).toHaveTextContent(/The seed is revealed/);
+    expect(flow).toHaveTextContent(/You recompute it/);
+
+    // The stated formula is the contract's: sha256(seed || round id), first 8
+    // bytes big-endian, mod 2 (0 heads / 1 tails).
+    expect(screen.getByTestId("fairness-formula")).toHaveTextContent(
+      /sha256\(server_seed ‖ round_id\)/,
+    );
+    expect(screen.getByTestId("fairness-formula")).toHaveTextContent(/% 2/);
+    expect(screen.getByTestId("fairness-formula")).toHaveTextContent(/0 is Heads, 1 is Tails/);
+
+    // Honest limits and the refund path the contract provides instead.
+    expect(screen.getByTestId("fairness-limits")).toHaveTextContent(/cancel_stale_bet/);
+    expect(screen.getByTestId("fairness-limits")).toHaveTextContent(/17,280 ledgers/);
+
+    // Manifest address resolves to the explorer contract page for this network.
+    expect(screen.getByTestId("rng-contract-address")).toHaveTextContent(RNG_ID);
+    expect(screen.getByTestId("rng-contract-explorer-link")).toHaveAttribute(
+      "href",
+      `https://stellar.expert/explorer/testnet/contract/${RNG_ID}`,
+    );
   });
 });

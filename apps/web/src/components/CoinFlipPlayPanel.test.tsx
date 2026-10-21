@@ -51,10 +51,13 @@ vi.mock("../services/coin-flip-client", async (importOriginal) => ({
   placeBet: coinFlip.placeBet,
 }));
 
+const gameHook = vi.hoisted(() => ({
+  state: { status: "pending" } as Record<string, unknown>,
+}));
+
 vi.mock("../hooks/useCoinFlipGame", () => ({
-  useCoinFlipGame: (gameId: bigint | null) => ({
-    status: gameId === null ? "idle" : "pending",
-  }),
+  useCoinFlipGame: (gameId: bigint | null) =>
+    gameId === null ? { status: "idle" } : gameHook.state,
 }));
 
 const PLAYER = "GDVEU3DD4KOFECV66VIHWEZOYX4ZKR3WV27L464SIIPOU2IUI3JCZA57";
@@ -62,6 +65,7 @@ const PLAYER = "GDVEU3DD4KOFECV66VIHWEZOYX4ZKR3WV27L464SIIPOU2IUI3JCZA57";
 beforeEach(() => {
   networkGuard.isSupported = true;
   coinFlip.placeBet.mockReset();
+  gameHook.state = { status: "pending" };
   walletState.status = "DISCONNECTED";
   walletState.address = null;
   walletState.network = null;
@@ -125,6 +129,38 @@ describe("CoinFlipPlayPanel", () => {
     expect(screen.getByRole("link", { name: /Bet transaction/i })).toHaveAttribute(
       "href",
       `https://stellar.expert/explorer/testnet/tx/${"c".repeat(64)}`,
+    );
+    // Pending round: nothing to verify yet, but the explainer is one click away.
+    expect(screen.getByTestId("coinflip-fairness-link")).toHaveAttribute("href", "/verify#how-it-works");
+    expect(screen.queryByTestId("coinflip-verify-link")).not.toBeInTheDocument();
+  });
+
+  it("links to the round verifier next to the fairness explainer once resolved", async () => {
+    walletState.status = "CONNECTED";
+    walletState.address = PLAYER;
+    walletState.network = "TESTNET";
+    walletState.capabilities = {
+      isConnected: true,
+      isConnecting: false,
+      isReconnecting: false,
+      canConnect: false,
+    };
+    coinFlip.placeBet.mockResolvedValue({ gameId: 7n, txHash: "b".repeat(64) });
+    gameHook.state = {
+      status: "resolved",
+      game: { side: 1, wager: 10_0000000n, won: true, payout: 19_5000000n, refunded: false },
+      resolveTxHash: "d".repeat(64),
+    };
+
+    render(<CoinFlipPlayPanel />);
+    fireEvent.click(screen.getByTestId("btn-confirm-bet"));
+
+    expect(await screen.findByTestId("coinflip-live-result")).toBeInTheDocument();
+    expect(screen.getByTestId("coinflip-verify-link")).toHaveAttribute("href", "/verify?requestId=7");
+    expect(screen.getByTestId("coinflip-fairness-link")).toHaveAttribute("href", "/verify#how-it-works");
+    expect(screen.getByRole("link", { name: /Resolution transaction/i })).toHaveAttribute(
+      "href",
+      `https://stellar.expert/explorer/testnet/tx/${"d".repeat(64)}`,
     );
   });
 

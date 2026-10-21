@@ -645,3 +645,67 @@ describe('ApiClient — result envelope shape', () => {
   });
 });
 
+
+describe('ApiClient — indexed game lookup', () => {
+  const CONTRACT_ID = 'CAA7MSM77YCU73NSBR46CIS26LSJT6RTBT476BEZ67BL5GUIFIQXLVBQ';
+  const indexedRow = {
+    game_type: 'coinflip',
+    bet_amount: '1.0000000',
+    payout: '0.0000000',
+    result: 'pending',
+    status: 'pending',
+    contract_id: CONTRACT_ID,
+    chain_game_id: '424242',
+    side: 'heads',
+    resolve_tx_hash: null,
+  };
+
+  it('getIndexedGame fetches /games/:contractId/:id', async () => {
+    mockFetch(200, indexedRow);
+
+    const client = new ApiClient();
+    const result = await client.getIndexedGame(CONTRACT_ID, '424242');
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.chain_game_id).toBe('424242');
+      expect(result.data.status).toBe('pending');
+    }
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining(`/games/${CONTRACT_ID}/424242`),
+      expect.objectContaining({ method: 'GET' })
+    );
+  });
+
+  it('getIndexedGame reports a 404 as API_NOT_FOUND with status 404, without retrying', async () => {
+    mockFetch(404, { status: 404, message: 'No indexed game matches this contract and game id.' });
+
+    const client = new ApiClient();
+    const result = await client.getIndexedGame(CONTRACT_ID, '999999');
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.code).toBe('API_NOT_FOUND');
+      expect(result.error.status).toBe(404);
+      expect(result.error.severity).toBe('terminal');
+    }
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('getIndexedGame validates the ids without hitting the API', async () => {
+    const spy = vi.fn();
+    global.fetch = spy;
+    const client = new ApiClient();
+
+    for (const [contractId, gameId] of [
+      ['', '1'],
+      [CONTRACT_ID, '  '],
+    ]) {
+      const result = await client.getIndexedGame(contractId, gameId);
+      expect(result.success).toBe(false);
+      if (!result.success) expect(result.error.code).toBe('API_VALIDATION_ERROR');
+    }
+
+    expect(spy).not.toHaveBeenCalled();
+  });
+});

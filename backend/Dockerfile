@@ -10,4 +10,4 @@ COPY migrations ./migrations
 COPY knexfile.js ./
 
 EXPOSE 3000
-CMD ["sh", "-c", "npx knex migrate:latest --knexfile knexfile.js && exec node src/server.js"]
+CMD ["sh", "-c", "npm run migrate && exec node src/server.js"]
