@@ -3,6 +3,39 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import React from "react";
 import CleanupPage from "./page";
 
+vi.mock("../../../src/services/account-cleanup", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../src/services/account-cleanup")>();
+  return {
+    ...actual,
+    getCleanupConfig: vi.fn().mockReturnValue({
+      horizonUrl: "https://horizon-testnet.stellar.org",
+      networkPassphrase: "Test SDF Network ; September 2015",
+    }),
+    buildCleanupTransaction: vi.fn().mockResolvedValue({
+      toXDR: () => "mock-xdr",
+    }),
+    calculateReclaimedXlm: vi.fn().mockReturnValue(1.0),
+  };
+});
+
+vi.mock("../../../src/services/freighter-adapter", () => ({
+  default: {
+    signTransaction: vi.fn().mockResolvedValue("mock-signed-xdr"),
+  },
+}));
+
+vi.mock("@stellar/stellar-sdk", () => ({
+  Horizon: {
+    Server: class {
+      loadAccount = vi.fn().mockResolvedValue({});
+      submitTransaction = vi.fn().mockResolvedValue({ hash: "mock-tx-hash-12345" });
+    },
+  },
+  TransactionBuilder: {
+    fromXDR: vi.fn().mockReturnValue({}),
+  },
+}));
+
 describe("CleanupPage", () => {
   it("renders page title and scan input", () => {
     render(<CleanupPage />);
