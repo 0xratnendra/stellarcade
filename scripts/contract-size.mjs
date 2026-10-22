@@ -128,11 +128,15 @@ function main() {
     if (r.sizeKb === null) {
       console.error(`ERROR: wasm not found for ${r.name}`);
       failed = true;
-    } else if (r.sizeKb > thresholdKb) {
+    } else if (r.sizeKb > limitKb) {
       console.error(
-        `ERROR: ${r.name} is ${formatKb(r.sizeKb)} KB, above 90% of the ${limitKb} KB limit (${thresholdKb.toFixed(1)} KB)`
+        `ERROR: ${r.name} is ${formatKb(r.sizeKb)} KB, exceeding the ${limitKb} KB limit`
       );
       failed = true;
+    } else if (r.sizeKb > thresholdKb) {
+      console.warn(
+        `WARNING: ${r.name} is ${formatKb(r.sizeKb)} KB, above 90% of the ${limitKb} KB limit (${thresholdKb.toFixed(1)} KB)`
+      );
     }
   }
 

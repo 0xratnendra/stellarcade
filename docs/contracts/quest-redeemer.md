@@ -22,6 +22,45 @@ pub fn init(env: Env, admin: Address, quest_board: Address, token: Address) -> R
 
 `Result<(), Error>`
 
+### `set_verifier`
+Set the trusted verifier address. Admin only.
+
+```rust
+pub fn set_verifier(env: Env, admin: Address, verifier: Address) -> Result<(), Error>
+```
+
+#### Parameters
+
+| Name | Type |
+|------|------|
+| `env` | `Env` |
+| `admin` | `Address` |
+| `verifier` | `Address` |
+
+#### Return Type
+
+`Result<(), Error>`
+
+### `mark_complete`
+Record that a player has completed a quest. Verifier only.
+
+```rust
+pub fn mark_complete(env: Env, verifier: Address, player: Address, quest_id: u32) -> Result<(), Error>
+```
+
+#### Parameters
+
+| Name | Type |
+|------|------|
+| `env` | `Env` |
+| `verifier` | `Address` |
+| `player` | `Address` |
+| `quest_id` | `u32` |
+
+#### Return Type
+
+`Result<(), Error>`
+
 ### `set_pause`
 Set the paused state. Admin only.
 
