@@ -101,6 +101,7 @@ members = [
     "lending-pool",
     "quest-redeemer",
     "reserve-manager",
+    "reward-vesting",
 ]
 
 exclude = [
@@ -152,7 +153,6 @@ exclude = [
     "reserve-auction",
     "reward-bridges",
     "reward-unlocker",
-    "reward-vesting",
     "round-vouchers",
     "season-rewards-vault",
     "session-nonce-manager",
