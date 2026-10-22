@@ -101,6 +101,7 @@ members = [
     "lending-pool",
     "quest-redeemer",
     "reserve-manager",
+    "number-guess",
 ]
 
 exclude = [
@@ -168,7 +169,6 @@ exclude = [
     "wallet-reserves",
     # Awaiting seed commitment migration milestone
     "dice-roll",
-    "number-guess",
 ]
 
 [profile.release]

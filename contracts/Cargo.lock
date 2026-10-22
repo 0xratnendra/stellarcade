@@ -2231,6 +2231,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "stellarcade-number-guess"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+ "stellarcade-random-generator",
+]
+
+[[package]]
 name = "stellarcade-oracle-integration"
 version = "0.1.0"
 dependencies = [
