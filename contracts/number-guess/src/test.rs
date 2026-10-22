@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use super::*;
 use soroban_sdk::{
     testutils::Address as _,
@@ -42,25 +40,16 @@ fn derive_rng_result(env: &Env, server_seed: &BytesN<32>, request_id: u64, max: 
     raw % max
 }
 
-/// Find a seed whose RNG result, mapped into [min, max], equals `target`.
-fn find_seed_for_target(env: &Env, game_id: u64, min: u32, max: u32, target: u32) -> BytesN<32> {
+/// Compute the secret number that a given seed produces for a game range.
+fn secret_for_seed(env: &Env, seed: &BytesN<32>, game_id: u64, min: u32, max: u32) -> u32 {
     let range_size = (max - min + 1) as u64;
-    for i in 0u8..=255 {
-        let seed = make_seed(env, i);
-        let rng_result = derive_rng_result(env, &seed, game_id, range_size);
-        let secret = min + rng_result as u32;
-        if secret == target {
-            return seed;
-        }
-    }
-    panic!(
-        "no seed in [0,255] produces target {} for range [{},{}]",
-        target, min, max
-    );
+    let rng_result = derive_rng_result(env, seed, game_id, range_size);
+    min + rng_result as u32
 }
 
 struct Setup<'a> {
     ng_client: NumberGuessClient<'a>,
+    ng_id: Address,
     rng_client: RandomGeneratorClient<'a>,
     admin: Address,
     oracle: Address,
@@ -89,6 +78,18 @@ fn setup(env: &Env) -> Setup<'_> {
     rng_client.init(&admin, &oracle);
     rng_client.authorize(&admin, &ng_id);
 
+    // Pre-commit seed commitments so request_random can pop them
+    let mut commitments = soroban_sdk::Vec::new(env);
+    for i in 0..255u8 {
+        let s = make_seed(env, i);
+        let h: BytesN<32> = env
+            .crypto()
+            .sha256(&soroban_sdk::Bytes::from_slice(env, &s.to_array()))
+            .into();
+        commitments.push_back(h);
+    }
+    rng_client.commit_seeds(&oracle, &commitments);
+
     let prize_pool = Address::generate(env);
 
     // Init NumberGuess: min_wager=10, max_wager=10_000, house_edge=250 bps (2.5%)
@@ -107,6 +108,7 @@ fn setup(env: &Env) -> Setup<'_> {
 
     Setup {
         ng_client,
+        ng_id,
         rng_client,
         admin,
         oracle,
@@ -204,20 +206,22 @@ fn test_win_path() {
     let min = 1u32;
     let max = 10u32;
     let wager: i128 = 100;
-    let target = 7u32; // player's guess that we'll engineer to win
+
+    // The first request_random pops the first committed seed (index 0).
+    let seed = make_seed(&env, 0);
+    let secret = secret_for_seed(&env, &seed, game_id, min, max);
 
     s.ng_client
         .start_game(&player, &min, &max, &wager, &game_id);
-    s.ng_client.submit_guess(&game_id, &target);
+    s.ng_client.submit_guess(&game_id, &secret);
 
-    let winning_seed = find_seed_for_target(&env, game_id, min, max, target);
     s.rng_client
-        .fulfill_random(&s.oracle, &game_id, &winning_seed);
+        .fulfill_random(&s.oracle, &s.ng_id, &game_id, &seed);
     s.ng_client.resolve_game(&game_id);
 
     let game = s.ng_client.get_game(&game_id);
     assert_eq!(game.status, GameStatus::Won);
-    assert_eq!(game.secret, target);
+    assert_eq!(game.secret, secret);
     assert!(game.payout > 0);
 
     // gross_payout = 100 * 10 = 1000; fee = 1000 * 250 / 10000 = 25; net = 975
@@ -244,27 +248,18 @@ fn test_loss_path() {
     let min = 1u32;
     let max = 10u32;
     let wager: i128 = 100;
-    let guess = 3u32;
+
+    // Use the first committed seed and pick a guess that won't match.
+    let seed = make_seed(&env, 0);
+    let secret = secret_for_seed(&env, &seed, game_id, min, max);
+    let guess = if secret == min { max } else { min };
 
     s.ng_client
         .start_game(&player, &min, &max, &wager, &game_id);
     s.ng_client.submit_guess(&game_id, &guess);
 
-    // Find a seed whose outcome is NOT 3
-    let range_size = (max - min + 1) as u64;
-    let mut losing_seed = make_seed(&env, 0);
-    for i in 0u8..=255 {
-        let seed = make_seed(&env, i);
-        let rng_result = derive_rng_result(&env, &seed, game_id, range_size);
-        let secret = min + rng_result as u32;
-        if secret != guess {
-            losing_seed = seed;
-            break;
-        }
-    }
-
     s.rng_client
-        .fulfill_random(&s.oracle, &game_id, &losing_seed);
+        .fulfill_random(&s.oracle, &s.ng_id, &game_id, &seed);
     s.ng_client.resolve_game(&game_id);
 
     let game = s.ng_client.get_game(&game_id);
@@ -454,8 +449,9 @@ fn test_double_resolve_rejected() {
         .start_game(&player, &1u32, &10u32, &100i128, &game_id);
     s.ng_client.submit_guess(&game_id, &5u32);
 
-    let seed = make_seed(&env, 42);
-    s.rng_client.fulfill_random(&s.oracle, &game_id, &seed);
+    let seed = make_seed(&env, 0);
+    s.rng_client
+        .fulfill_random(&s.oracle, &s.ng_id, &game_id, &seed);
     s.ng_client.resolve_game(&game_id);
 
     let result = s.ng_client.try_resolve_game(&game_id);
@@ -480,8 +476,9 @@ fn test_resolve_before_guess_rejected() {
         .start_game(&player, &1u32, &10u32, &100i128, &game_id);
     // No submit_guess call
 
-    let seed = make_seed(&env, 1);
-    s.rng_client.fulfill_random(&s.oracle, &game_id, &seed);
+    let seed = make_seed(&env, 0);
+    s.rng_client
+        .fulfill_random(&s.oracle, &s.ng_id, &game_id, &seed);
 
     let result = s.ng_client.try_resolve_game(&game_id);
     assert!(result.is_err());
@@ -568,20 +565,21 @@ fn test_payout_formula_range_two() {
     let player = Address::generate(&env);
     s.token_sac.mint(&player, &1_000);
 
-    // Range [1,2], guess 1.  Target = 1 so we need an even rng_result (0 → secret=1).
     let game_id: u64 = 200;
     let min = 1u32;
     let max = 2u32;
     let wager: i128 = 1_000;
-    let target = 1u32;
+
+    // First committed seed; compute secret and guess it to win.
+    let seed = make_seed(&env, 0);
+    let secret = secret_for_seed(&env, &seed, game_id, min, max);
 
     s.ng_client
         .start_game(&player, &min, &max, &wager, &game_id);
-    s.ng_client.submit_guess(&game_id, &target);
+    s.ng_client.submit_guess(&game_id, &secret);
 
-    let winning_seed = find_seed_for_target(&env, game_id, min, max, target);
     s.rng_client
-        .fulfill_random(&s.oracle, &game_id, &winning_seed);
+        .fulfill_random(&s.oracle, &s.ng_id, &game_id, &seed);
     s.ng_client.resolve_game(&game_id);
 
     let game = s.ng_client.get_game(&game_id);
@@ -670,18 +668,21 @@ fn test_secret_always_in_range() {
 
     let min: u32 = 5;
     let max: u32 = 15;
-    let range_size = (max - min + 1) as u64;
 
     for i in 0u64..20 {
         let wager: i128 = 10;
         let game_id = 1000 + i;
 
+        // Each request_random pops the next committed seed in FIFO order.
+        let seed = make_seed(&env, i as u8);
+        let secret = secret_for_seed(&env, &seed, game_id, min, max);
+
         s.ng_client
             .start_game(&player, &min, &max, &wager, &game_id);
         s.ng_client.submit_guess(&game_id, &min); // always guess min
 
-        let seed = make_seed(&env, i as u8);
-        s.rng_client.fulfill_random(&s.oracle, &game_id, &seed);
+        s.rng_client
+            .fulfill_random(&s.oracle, &s.ng_id, &game_id, &seed);
         s.ng_client.resolve_game(&game_id);
 
         let game = s.ng_client.get_game(&game_id);
@@ -693,10 +694,6 @@ fn test_secret_always_in_range() {
             max,
             game_id
         );
-
-        // Verify the derivation independently
-        let expected_rng = derive_rng_result(&env, &seed, game_id, range_size);
-        let expected_secret = min + expected_rng as u32;
-        assert_eq!(game.secret, expected_secret);
+        assert_eq!(game.secret, secret);
     }
 }
