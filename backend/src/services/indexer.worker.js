@@ -1,4 +1,3 @@
-
 const StellarSdk = require('@stellar/stellar-sdk');
 const logger = require('../utils/logger');
 

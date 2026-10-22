@@ -31,6 +31,15 @@ use soroban_sdk::{
 /// Bumped on every write so active game data never expires mid-round.
 pub const PERSISTENT_BUMP_LEDGERS: u32 = 518_400;
 
+/// Instance storage TTL in ledgers (~30 days at 5 s/ledger). Instance storage
+/// holds the admin and token address; if it were archived every call would
+/// fail until someone restored it.
+pub const INSTANCE_BUMP_LEDGERS: u32 = 518_400;
+
+/// Instance TTL is only extended once it drops below this many ledgers (~15
+/// days), so busy contracts do not pay for a bump on every call.
+pub const INSTANCE_LIFETIME_THRESHOLD: u32 = 259_200;
+
 // ---------------------------------------------------------------------------
 // Error Types
 // ---------------------------------------------------------------------------
@@ -216,6 +225,8 @@ impl PrizePool {
     /// Stellar Asset Contract). All `fund` and `payout` operations transfer
     /// tokens through this contract exclusively.
     pub fn init(env: Env, admin: Address, token: Address) -> Result<(), Error> {
+        extend_instance_ttl(&env);
+
         if env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::AlreadyInitialized);
         }
@@ -236,6 +247,7 @@ impl PrizePool {
 
     /// Rotate the admin address. Only the current admin may perform this action.
     pub fn rotate_admin(env: Env, admin: Address, new_admin: Address) -> Result<(), Error> {
+        extend_instance_ttl(&env);
         require_initialized(&env)?;
         require_admin(&env, &admin)?;
         new_admin.require_auth();
@@ -254,6 +266,7 @@ impl PrizePool {
     /// forwarding a player's wager). The caller must sign an auth tree covering
     /// both this invocation and the downstream `token.transfer` sub-call.
     pub fn fund(env: Env, from: Address, amount: i128) -> Result<(), Error> {
+        extend_instance_ttl(&env);
         require_initialized(&env)?;
 
         if amount <= 0 {
@@ -287,6 +300,7 @@ impl PrizePool {
     /// `GameAlreadyReserved` — this is the idempotency guard preventing a
     /// buggy game contract from double-drawing from the pool.
     pub fn reserve(env: Env, admin: Address, game_id: u64, amount: i128) -> Result<(), Error> {
+        extend_instance_ttl(&env);
         require_initialized(&env)?;
         require_admin(&env, &admin)?;
 
@@ -340,6 +354,7 @@ impl PrizePool {
     /// remaining`) is valid. When `remaining` reaches zero the reservation
     /// entry is removed to avoid stale storage.
     pub fn release(env: Env, admin: Address, game_id: u64, amount: i128) -> Result<(), Error> {
+        extend_instance_ttl(&env);
         require_initialized(&env)?;
         require_admin(&env, &admin)?;
 
@@ -410,6 +425,7 @@ impl PrizePool {
         game_id: u64,
         amount: i128,
     ) -> Result<(), Error> {
+        extend_instance_ttl(&env);
         require_initialized(&env)?;
         require_admin(&env, &admin)?;
 
@@ -482,6 +498,7 @@ impl PrizePool {
     /// This method only moves accounting UPWARD. It will not reduce `available`
     /// or touch `total_reserved` or any active reservations.
     pub fn sync(env: Env, admin: Address) -> Result<i128, Error> {
+        extend_instance_ttl(&env);
         require_initialized(&env)?;
         require_admin(&env, &admin)?;
 
@@ -625,6 +642,14 @@ impl PrizePool {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/// Keep the instance entry (admin, token) alive. Called first in every
+/// state-changing entry point.
+fn extend_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_LEDGERS);
+}
 
 fn require_initialized(env: &Env) -> Result<(), Error> {
     if !env.storage().instance().has(&DataKey::Admin) {

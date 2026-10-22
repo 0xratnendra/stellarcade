@@ -2146,11 +2146,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "stellarcade-jackpot-pool"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
 name = "stellarcade-leaderboard"
 version = "0.1.0"
 dependencies = [
  "soroban-sdk",
  "stellarcade-shared",
+]
+
+[[package]]
+name = "stellarcade-lending-pool"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
 ]
 
 [[package]]
@@ -2280,6 +2294,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "stellarcade-quest-redeemer"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
 name = "stellarcade-random-generator"
 version = "0.1.0"
 dependencies = [
@@ -2295,6 +2316,13 @@ dependencies = [
 
 [[package]]
 name = "stellarcade-referral-system"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
+name = "stellarcade-reserve-manager"
 version = "0.1.0"
 dependencies = [
  "soroban-sdk",

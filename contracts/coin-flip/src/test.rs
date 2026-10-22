@@ -25,6 +25,9 @@ fn seed(env: &Env, byte: u8) -> BytesN<32> {
 struct Setup<'a> {
     flip_client: CoinFlipClient<'a>,
     rng_client: RngTestClient<'a>,
+    /// Address of the coin-flip contract; it is the RNG "caller" its requests
+    /// are namespaced under.
+    flip_id: Address,
     admin: Address,
     oracle: Address,
     token_addr: Address,
@@ -74,6 +77,7 @@ fn setup(env: &Env) -> Setup<'_> {
     Setup {
         flip_client,
         rng_client,
+        flip_id,
         admin,
         oracle,
         token_addr,
@@ -154,7 +158,8 @@ fn test_resolve_win() {
         }
     }
 
-    s.rng_client.fulfill_random(&s.oracle, &1u64, &winning_seed);
+    s.rng_client
+        .fulfill_random(&s.oracle, &s.flip_id, &1u64, &winning_seed);
     s.flip_client.resolve_bet(&1u64);
 
     let game = s.flip_client.get_game(&1u64);
@@ -187,7 +192,7 @@ fn test_resolve_loss() {
 
     let losing_seed = seed(&env, 0);
     s.rng_client
-        .fulfill_random(&s.oracle, &game_id, &losing_seed);
+        .fulfill_random(&s.oracle, &s.flip_id, &game_id, &losing_seed);
     s.flip_client.resolve_bet(&game_id);
 
     let game = s.flip_client.get_game(&game_id);
@@ -311,7 +316,8 @@ fn test_double_resolve_rejected() {
     s.flip_client.place_bet(&player, &HEADS, &100, &1u64);
 
     let rng_seed = seed(&env, 0);
-    s.rng_client.fulfill_random(&s.oracle, &1u64, &rng_seed);
+    s.rng_client
+        .fulfill_random(&s.oracle, &s.flip_id, &1u64, &rng_seed);
     s.flip_client.resolve_bet(&1u64);
 
     let result = s.flip_client.try_resolve_bet(&1u64);
@@ -492,7 +498,8 @@ fn test_exposure_snapshot_resets_after_resolve() {
 
     // Fulfill RNG and resolve so the exposure counter decrements
     let srv = seed(&env, 0);
-    s.rng_client.fulfill_random(&s.oracle, &42u64, &srv);
+    s.rng_client
+        .fulfill_random(&s.oracle, &s.flip_id, &42u64, &srv);
     s.flip_client.resolve_bet(&42u64);
 
     let after = s.flip_client.house_exposure_snapshot();
@@ -640,7 +647,8 @@ fn test_fund_and_resolve_win_payout() {
 
     // Winning seed with game_id 1 is seed(0)
     let win_seed = seed(&env, 0);
-    s.rng_client.fulfill_random(&s.oracle, &1u64, &win_seed);
+    s.rng_client
+        .fulfill_random(&s.oracle, &s.flip_id, &1u64, &win_seed);
     s.flip_client.resolve_bet(&1u64);
 
     let game = s.flip_client.get_game(&1u64);
@@ -783,8 +791,11 @@ fn test_resolve_after_refund_rejected_even_if_rng_fulfilled() {
 
     // The oracle fulfills late with seed(0), which wins for Heads on game 1.
     s.rng_client
-        .fulfill_random(&s.oracle, &1u64, &seed(&env, 0));
-    assert_eq!(s.rng_client.get_result(&1u64).result, HEADS as u64);
+        .fulfill_random(&s.oracle, &s.flip_id, &1u64, &seed(&env, 0));
+    assert_eq!(
+        s.rng_client.get_result(&s.flip_id, &1u64).result,
+        HEADS as u64
+    );
 
     let res = s.flip_client.try_resolve_bet(&1u64);
     assert_eq!(res, Err(Ok(Error::GameRefunded)));
@@ -806,7 +817,7 @@ fn test_cancel_resolved_game_rejected() {
 
     // seed(0) wins for Heads on game 1: payout 198.
     s.rng_client
-        .fulfill_random(&s.oracle, &1u64, &seed(&env, 0));
+        .fulfill_random(&s.oracle, &s.flip_id, &1u64, &seed(&env, 0));
     s.flip_client.resolve_bet(&1u64);
     assert_eq!(tc(&env, &s.token_addr).balance(&player), 598i128);
 
@@ -824,7 +835,7 @@ fn test_cancel_rejected_when_rng_fulfilled_but_unresolved() {
     let player = place_stale_candidate(&env, &s, 1u64);
 
     s.rng_client
-        .fulfill_random(&s.oracle, &1u64, &seed(&env, 0));
+        .fulfill_random(&s.oracle, &s.flip_id, &1u64, &seed(&env, 0));
     advance_past_timeout(&env);
 
     let res = s.flip_client.try_cancel_stale_bet(&player, &1u64);
@@ -869,6 +880,133 @@ fn test_cancel_without_player_auth_rejected() {
 
     assert_eq!(tc(&env, &s.token_addr).balance(&player), 400i128);
     assert!(!s.flip_client.get_game(&1u64).refunded);
+}
+
+// -------------------------------------------------------------------
+// Instance storage TTL (#1385)
+// -------------------------------------------------------------------
+
+fn instance_ttl(env: &Env, contract_id: &Address) -> u32 {
+    use soroban_sdk::testutils::storage::Instance as _;
+    env.as_contract(contract_id, || env.storage().instance().get_ttl())
+}
+
+fn advance_ledgers(env: &Env, ledgers: u32) {
+    env.ledger().with_mut(|l| l.sequence_number += ledgers);
+}
+
+/// Ledgers to advance so the instance TTL drops below the extension threshold
+/// (but the persistent entries written by `setup` stay alive).
+const DECAY: u32 = INSTANCE_BUMP_LEDGERS - INSTANCE_LIFETIME_THRESHOLD + 1_000;
+
+#[test]
+fn test_init_extends_instance_ttl() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let flip_id = env.register(CoinFlip, ());
+    let flip_client = CoinFlipClient::new(&env, &flip_id);
+    env.mock_all_auths();
+
+    assert!(instance_ttl(&env, &flip_id) < INSTANCE_BUMP_LEDGERS);
+    flip_client.init(
+        &admin,
+        &Address::generate(&env),
+        &Address::generate(&env),
+        &10i128,
+        &1000i128,
+        &250i128,
+    );
+    assert!(instance_ttl(&env, &flip_id) >= INSTANCE_BUMP_LEDGERS);
+}
+
+#[test]
+fn test_state_changing_calls_extend_instance_ttl() {
+    let env = Env::default();
+    let s = setup(&env);
+    env.mock_all_auths();
+
+    let player = Address::generate(&env);
+    s.token_sac.mint(&player, &10_000i128);
+
+    // place_bet
+    advance_ledgers(&env, DECAY);
+    assert!(instance_ttl(&env, &s.flip_id) < INSTANCE_LIFETIME_THRESHOLD);
+    s.flip_client.place_bet(&player, &HEADS, &100i128, &1u64);
+    assert!(instance_ttl(&env, &s.flip_id) >= INSTANCE_BUMP_LEDGERS);
+
+    // resolve_bet
+    s.rng_client
+        .fulfill_random(&s.oracle, &s.flip_id, &1u64, &seed(&env, 0));
+    advance_ledgers(&env, DECAY);
+    s.flip_client.resolve_bet(&1u64);
+    assert!(instance_ttl(&env, &s.flip_id) >= INSTANCE_BUMP_LEDGERS);
+
+    // fund_house
+    s.token_sac.mint(&s.admin, &500i128);
+    advance_ledgers(&env, DECAY);
+    s.flip_client.fund_house(&s.admin, &500i128);
+    assert!(instance_ttl(&env, &s.flip_id) >= INSTANCE_BUMP_LEDGERS);
+
+    // withdraw_house
+    advance_ledgers(&env, DECAY);
+    s.flip_client.withdraw_house(&s.admin, &100i128);
+    assert!(instance_ttl(&env, &s.flip_id) >= INSTANCE_BUMP_LEDGERS);
+
+    // cancel_stale_bet (never fulfilled, past the refund timeout)
+    s.flip_client.place_bet(&player, &HEADS, &100i128, &2u64);
+    advance_ledgers(&env, DECAY.max(DEFAULT_REFUND_TIMEOUT_LEDGERS + 1));
+    assert!(instance_ttl(&env, &s.flip_id) < INSTANCE_LIFETIME_THRESHOLD);
+    s.flip_client.cancel_stale_bet(&player, &2u64);
+    assert!(instance_ttl(&env, &s.flip_id) >= INSTANCE_BUMP_LEDGERS);
+}
+
+#[test]
+fn test_contract_still_works_after_original_instance_ttl_passed() {
+    let env = Env::default();
+    let s = setup(&env);
+    env.mock_all_auths();
+
+    let player = Address::generate(&env);
+    s.token_sac.mint(&player, &10_000i128);
+
+    // TTL granted by setup's `init`; each call renews it.
+    let original_ttl = instance_ttl(&env, &s.flip_id);
+
+    // Step past the original expiry in two hops with a call in between.
+    advance_ledgers(&env, original_ttl / 2 + 1_000);
+    s.flip_client.place_bet(&player, &HEADS, &100i128, &1u64);
+    advance_ledgers(&env, original_ttl / 2 + 1_000);
+
+    s.rng_client
+        .fulfill_random(&s.oracle, &s.flip_id, &1u64, &seed(&env, 0));
+    s.flip_client.resolve_bet(&1u64);
+    assert!(s.flip_client.get_game(&1u64).resolved);
+    assert!(instance_ttl(&env, &s.flip_id) >= INSTANCE_BUMP_LEDGERS);
+}
+
+// -------------------------------------------------------------------
+// RNG request IDs are namespaced per caller (#1386)
+// -------------------------------------------------------------------
+
+#[test]
+fn test_game_id_does_not_collide_with_another_games_request_id() {
+    let env = Env::default();
+    let s = setup(&env);
+    env.mock_all_auths();
+
+    // A second authorised game (e.g. dice-roll) already used request_id 1.
+    let other_game = Address::generate(&env);
+    s.rng_client.authorize(&s.admin, &other_game);
+    s.rng_client.request_random(&other_game, &1u64, &6u64);
+
+    // Coin-flip game_id 1 still works end to end.
+    let player = Address::generate(&env);
+    s.token_sac.mint(&player, &1_000i128);
+    s.flip_client.place_bet(&player, &HEADS, &100i128, &1u64);
+    s.rng_client
+        .fulfill_random(&s.oracle, &s.flip_id, &1u64, &seed(&env, 1));
+    s.flip_client.resolve_bet(&1u64);
+    assert!(s.flip_client.get_game(&1u64).resolved);
 }
 
 // -------------------------------------------------------------------
@@ -1036,7 +1174,7 @@ fn test_resolve_and_cancel_work_while_paused() {
 
     // Resolve bet 1 while paused
     s.rng_client
-        .fulfill_random(&s.oracle, &1u64, &seed(&env, 0));
+        .fulfill_random(&s.oracle, &s.flip_id, &1u64, &seed(&env, 0));
     assert!(s.flip_client.try_resolve_bet(&1u64).is_ok());
     let g1 = s.flip_client.get_game(&1u64);
     assert!(g1.resolved);

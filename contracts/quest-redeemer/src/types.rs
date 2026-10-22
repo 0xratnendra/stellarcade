@@ -19,10 +19,31 @@ pub struct RedeemerConfig {
     pub is_paused: bool,
 }
 
+/// Optional `RedeemerConfig` wrapper for use inside `#[contracttype]` structs.
+/// Soroban's XDR layer does not support `Option<CustomStruct>` as a field, so
+/// an explicit two-variant enum is used instead.
+///
+/// Zero-state (contract not initialised): `OptionalRedeemerConfig::None`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OptionalRedeemerConfig {
+    None,
+    Some(RedeemerConfig),
+}
+
+impl From<Option<RedeemerConfig>> for OptionalRedeemerConfig {
+    fn from(value: Option<RedeemerConfig>) -> Self {
+        match value {
+            Some(config) => OptionalRedeemerConfig::Some(config),
+            None => OptionalRedeemerConfig::None,
+        }
+    }
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RedemptionSnapshot {
-    pub config: Option<RedeemerConfig>,
+    pub config: OptionalRedeemerConfig,
     pub status: RedemptionStatus,
     pub user: Address,
     pub quest_id: u32,
@@ -32,7 +53,7 @@ pub struct RedemptionSnapshot {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RewardGap {
-    pub config: Option<RedeemerConfig>,
+    pub config: OptionalRedeemerConfig,
     pub status: RedemptionStatus,
     pub user: Address,
     pub quest_id: u32,

@@ -11,7 +11,6 @@ const { getDeepHealth } = require('../controllers/health.controller');
 
 const router = express.Router();
 
-
 const healthCheck = (req, res) => {
   res.status(200).json({
     status: 'Operational',
@@ -19,7 +18,6 @@ const healthCheck = (req, res) => {
     service: 'stellarcade-api',
   });
 };
-
 
 const v1Router = express.Router();
 v1Router.get('/health', healthCheck);
@@ -33,9 +31,7 @@ v1Router.use('/quests', questsRoutes);
 v1Router.use('/tournaments', tournamentsRoutes);
 v1Router.use('/webhook', webhookRoutes);
 
-
 router.use('/v1', v1Router);
-
 
 router.get('/health', healthCheck);
 router.get('/health/deep', getDeepHealth);

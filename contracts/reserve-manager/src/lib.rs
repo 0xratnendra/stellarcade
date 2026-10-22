@@ -10,7 +10,8 @@ use crate::storage::{
     get_assets, get_config, get_reserve_state, set_assets, set_config, set_reserve_state,
 };
 use crate::types::{
-    ManagerConfig, ManagerThresholdSummary, ReserveSnapshot, ReserveState, ReserveStatus,
+    ManagerConfig, ManagerThresholdSummary, OptionalManagerConfig, ReserveSnapshot, ReserveState,
+    ReserveStatus,
 };
 use soroban_sdk::{contract, contracterror, contractevent, contractimpl, Address, Env, Vec};
 
@@ -132,7 +133,7 @@ impl ReserveManager {
         }
 
         ReserveSnapshot {
-            config,
+            config: OptionalManagerConfig::from(config),
             reserves,
             ledger: env.ledger().sequence(),
         }

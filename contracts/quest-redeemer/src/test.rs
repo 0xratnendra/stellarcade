@@ -40,8 +40,8 @@ fn test_init_and_snapshot() {
 
     let user = Address::generate(&s.env);
     let snapshot = s.client.get_redemption_snapshot(&user, &1);
-    
-    assert!(snapshot.config.is_some());
+
+    assert!(matches!(snapshot.config, OptionalRedeemerConfig::Some(_)));
     assert_eq!(snapshot.status, RedemptionStatus::Eligible);
     assert!(!s.client.is_paused());
 }
@@ -68,7 +68,7 @@ fn test_paused_redemption() {
 
     s.client.set_pause(&true);
     let user = Address::generate(&s.env);
-    
+
     let snapshot = s.client.get_redemption_snapshot(&user, &1);
     assert_eq!(snapshot.status, RedemptionStatus::Paused);
 
@@ -84,6 +84,42 @@ fn test_uninitialized_reads() {
     let user = Address::generate(&env);
 
     let snapshot = client.get_redemption_snapshot(&user, &1);
-    assert!(snapshot.config.is_none());
+    assert_eq!(snapshot.config, OptionalRedeemerConfig::None);
     assert_eq!(snapshot.status, RedemptionStatus::Paused);
+}
+
+#[test]
+fn test_turn_in_queue_summary_uninitialized_has_no_config() {
+    let env = Env::default();
+    let contract_id = env.register(QuestRedeemer, ());
+    let client = QuestRedeemerClient::new(&env, &contract_id);
+    let user = Address::generate(&env);
+
+    let summary = client.turn_in_queue_summary(&user, &1);
+    assert_eq!(summary.config, OptionalRedeemerConfig::None);
+    assert_eq!(summary.status, RedemptionStatus::Paused);
+}
+
+#[test]
+fn test_reward_gap_uninitialized_has_no_config() {
+    let env = Env::default();
+    let contract_id = env.register(QuestRedeemer, ());
+    let client = QuestRedeemerClient::new(&env, &contract_id);
+    let user = Address::generate(&env);
+
+    let gap = client.reward_gap(&user, &1);
+    assert_eq!(gap.config, OptionalRedeemerConfig::None);
+    assert_eq!(gap.reward_gap, 1);
+    assert!(!gap.ready_to_turn_in);
+}
+
+#[test]
+fn test_reward_gap_initialized_carries_config() {
+    let s = setup();
+    s.client.init(&s.admin, &s.quest_board, &s.token);
+    let user = Address::generate(&s.env);
+
+    let gap = s.client.reward_gap(&user, &1);
+    assert!(matches!(gap.config, OptionalRedeemerConfig::Some(_)));
+    assert_eq!(gap.reward_gap, 0);
 }

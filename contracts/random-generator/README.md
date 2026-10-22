@@ -55,27 +55,28 @@ Register a pending randomness request. Whitelisted callers only.
 
 - `caller` must be in the authorized whitelist and must sign the transaction.
 - `max` must be `>= 2`. The fulfilled result will be in `[0, max - 1]`.
-- `request_id` must be unique across all pending and previously fulfilled requests. Reuse is rejected to prevent a game contract from re-requesting after seeing a result.
+- `request_id` is namespaced per `caller`: it must be unique among that caller's pending and previously fulfilled requests (reuse is rejected so a game cannot re-request after seeing a result), but two authorised callers may use the same `request_id` independently.
 - Emits: `RandomRequested { request_id, caller, max }`.
 
 ---
 
-### `fulfill_random(oracle: Address, request_id: u64, server_seed: BytesN<32>) -> Result<(), Error>`
+### `fulfill_random(oracle: Address, caller: Address, request_id: u64, server_seed: BytesN<32>) -> Result<(), Error>`
 
 Fulfill a pending request. Oracle only.
 
 - Derives result: `sha256(server_seed || request_id_be_bytes)[0..8] % max`
 - Removes the pending entry and writes a fulfilled entry containing `caller`, `max`, `server_seed`, and `result`.
-- Each `request_id` can only be fulfilled once.
-- Emits: `RandomFulfilled { request_id, result, server_seed }`.
+- `caller` is the game contract that submitted the request; the request is looked up by `(caller, request_id)`. A caller that did not submit `request_id` gets `RequestNotFound`.
+- Each `(caller, request_id)` can only be fulfilled once.
+- Emits: `RandomFulfilled { request_id, caller, result, server_seed }` (`request_id` and `caller` are topics).
 
 ---
 
-### `get_result(request_id: u64) -> Result<FulfilledEntry, Error>`
+### `get_result(caller: Address, request_id: u64) -> Result<FulfilledEntry, Error>`
 
-Return the fulfilled result for a `request_id`.
+Return the fulfilled result for `caller`'s `request_id`.
 
-Returns `RequestNotFound` if the request is still pending or never existed.
+Returns `RequestNotFound` if the request is still pending, never existed, or belongs to a different caller.
 
 ```rust
 pub struct FulfilledEntry {
@@ -147,8 +148,8 @@ assert expected == entry.result
 Round lifecycle:
   1. Oracle publishes sha256(server_seed) off-chain (commitment)
   2. game_contract → rng.request_random(game_contract, request_id, max)
-  3. oracle        → rng.fulfill_random(oracle, request_id, server_seed)
-  4. game_contract → rng.get_result(request_id) → use entry.result
+  3. oracle        → rng.fulfill_random(oracle, game_contract, request_id, server_seed)
+  4. game_contract → rng.get_result(game_contract, request_id) → use entry.result
   5. [optional] anyone verifies result off-chain using the stored server_seed
 ```
 
@@ -170,13 +171,13 @@ cargo fmt
 
 ## Additional Request Visibility
 
-`get_request_status(request_id)` returns a stable lifecycle snapshot for a request id:
+`get_request_status(caller, request_id)` returns a stable lifecycle snapshot for a caller's request id:
 
 - `Missing` when the id has never been seen.
 - `Pending` with the original `caller` and `max`.
 - `Fulfilled` with `caller`, `max`, `result`, and `server_seed`.
 
-Duplicate or missing fulfillment attempts also emit `RandomFulfillmentRejected { request_id, reason }` before returning an error, which improves request-trace debugging.
+Duplicate or missing fulfillment attempts also emit `RandomFulfillmentRejected { request_id, caller, reason }` before returning an error, which improves request-trace debugging.
 
 ---
 
