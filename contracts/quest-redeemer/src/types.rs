@@ -26,6 +26,7 @@ pub struct RedeemerConfig {
 /// Zero-state (contract not initialised): `OptionalRedeemerConfig::None`.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum OptionalRedeemerConfig {
     None,
     Some(RedeemerConfig),

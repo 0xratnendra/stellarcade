@@ -6,7 +6,10 @@ mod types;
 #[cfg(test)]
 mod test;
 
-use crate::storage::{get_config, has_redeemed, record_redemption, set_config};
+use crate::storage::{
+    get_config, get_verifier, has_completion, has_redeemed, record_completion, record_redemption,
+    set_config, set_verifier,
+};
 use crate::types::{
     OptionalRedeemerConfig, RedeemerConfig, RedemptionSnapshot, RedemptionStatus, RewardGap,
 };
@@ -22,6 +25,8 @@ pub enum Error {
     Paused = 4,
     AlreadyRedeemed = 5,
     InvalidQuest = 6,
+    NotCompleted = 7,
+    NotVerifier = 8,
 }
 
 #[contractevent]
@@ -60,6 +65,34 @@ impl QuestRedeemer {
         Ok(())
     }
 
+    /// Set the trusted verifier address. Admin only.
+    pub fn set_verifier(env: Env, admin: Address, verifier: Address) -> Result<(), Error> {
+        let config = get_config(&env).ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+        if admin != config.admin {
+            return Err(Error::NotAuthorized);
+        }
+        set_verifier(&env, &verifier);
+        Ok(())
+    }
+
+    /// Record that a player has completed a quest. Verifier only.
+    pub fn mark_complete(
+        env: Env,
+        verifier: Address,
+        player: Address,
+        quest_id: u32,
+    ) -> Result<(), Error> {
+        get_config(&env).ok_or(Error::NotInitialized)?;
+        verifier.require_auth();
+        let stored = get_verifier(&env).ok_or(Error::NotVerifier)?;
+        if verifier != stored {
+            return Err(Error::NotVerifier);
+        }
+        record_completion(&env, &player, quest_id);
+        Ok(())
+    }
+
     /// Set the paused state. Admin only.
     pub fn set_pause(env: Env, paused: bool) -> Result<(), Error> {
         let mut config = get_config(&env).ok_or(Error::NotInitialized)?;
@@ -81,8 +114,9 @@ impl QuestRedeemer {
             return Err(Error::AlreadyRedeemed);
         }
 
-        // Logic check: query QuestBoard to see if user completed quest
-        // For now, we assume success or external oracle verification
+        if !has_completion(&env, &user, quest_id) {
+            return Err(Error::NotCompleted);
+        }
 
         record_redemption(&env, &user, quest_id);
 

@@ -428,7 +428,7 @@ impl NumberGuess {
         // Fetch fulfilled RNG entry.
         let rng_addr: Address = env.storage().instance().get(&DataKey::RngContract).unwrap();
         let rng_client = RandomGeneratorClient::new(&env, &rng_addr);
-        let rng_entry = match rng_client.try_get_result(&game_id) {
+        let rng_entry = match rng_client.try_get_result(&env.current_contract_address(), &game_id) {
             Ok(Ok(e)) => e,
             _ => return Err(Error::RngNotFulfilled),
         };
@@ -472,8 +472,9 @@ impl NumberGuess {
         );
 
         if won {
-            // TODO: Route payout through prize_pool_contract once it is
-            // implemented.  Direct token transfer used in the interim.
+            // Pay winners directly from the contract's bankroll (tokens
+            // collected from wagers and pre-funded deposits).  Prize-pool
+            // routing is deferred until that contract exposes a draw API.
             let token: Address = env
                 .storage()
                 .instance()
